@@ -276,3 +276,52 @@ class RoleAssignment(Base):
         default=utc_now,
         nullable=False,
     )
+
+# =====================================
+# DEPARTMENT DATABASE REGISTRY
+# =====================================
+
+class DepartmentDatabase(Base):
+    __tablename__ = "department_databases"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('provisioning', 'active', 'failed')",
+            name="ck_department_databases_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    department_id: Mapped[str] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    database_name: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        nullable=False,
+    )
+
+    credential_key: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="provisioning",
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
