@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import create_engine
 from app.credentials import configured_url
 from app.models import Base
+from app.auth import models as auth_models  # Register additive central auth tables.
 
 
 config = context.config
