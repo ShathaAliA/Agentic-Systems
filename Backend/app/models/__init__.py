@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     DateTime,
+    Integer,
     ForeignKey,
     Index,
     String,
@@ -283,6 +284,13 @@ class RoleAssignment(Base):
 
 class DepartmentDatabase(Base):
     __tablename__ = "department_databases"
+
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    claim_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_revision: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
