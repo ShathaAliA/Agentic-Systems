@@ -174,6 +174,53 @@ def test_unknown_migration_error_codes_are_not_persisted(setup):
     assert state(w)[2] == "infrastructure_error"
 
 
+@pytest.mark.parametrize("revision,tables", [
+    ("tenant_0001", ["_provisioning_identity"]),
+    ("tenant_0001", ["_provisioning_identity", "documents"]),
+    ("head", ["_provisioning_identity", "documents"]),
+    ("documents_0002", ["_provisioning_identity", "alembic_version"]),
+    ("documents_0002", ["documents"]),
+])
+def test_ready_flag_cannot_bypass_missing_business_schema(tmp_path, revision, tables):
+    import json
+    path = tmp_path / "contract.json"
+    path.write_text(json.dumps({"ready": True, "required_revision": revision, "required_tables": tables}))
+    assert not TenantMigrator.from_contract(path).available
+
+
+def test_document_contract_requires_identity_and_business_table(tmp_path):
+    import json
+    path = tmp_path / "contract.json"
+    path.write_text(json.dumps({"ready": True, "required_revision": "documents_0002", "required_tables": ["_provisioning_identity", "documents"]}))
+    contract = TenantMigrator.from_contract(path)
+    assert contract.available
+    assert contract.required_revision == "documents_0002"
+
+
+def test_resource_adapter_rejects_unmanaged_names_before_connect(monkeypatch):
+    from app.provisioning.postgres import PostgresProvisioner
+    from app.credentials import Credentials
+    pg = PostgresProvisioner("postgresql://admin@localhost/postgres")
+    connect = Mock()
+    monkeypatch.setattr(pg,"connect",connect)
+    with pytest.raises(ProvisioningError,match="unmanaged_database_identity"):
+        pg.ensure_resources("hr_db","owner",Credentials("app","test-only"),"legal")
+    connect.assert_not_called()
+
+
+@pytest.mark.parametrize("database,owner", [
+    ("ai_platform_db", "ai_user"),
+    ("dept_" + "a" * 32, 'owner"; RESET ROLE; --'),
+])
+def test_migrator_rejects_unmanaged_targets_before_opening_connection(monkeypatch, database, owner):
+    import app.provisioning.tenant_migrations as migrations
+    create = Mock()
+    monkeypatch.setattr(migrations,"create_engine",create)
+    with pytest.raises(ProvisioningError,match="unmanaged_database_identity"):
+        TenantMigrator("tenant_0001",["_provisioning_identity"]).migrate("postgresql://admin@localhost/"+database,owner,"legal")
+    create.assert_not_called()
+
+
 @pytest.mark.parametrize("database,key", [("postgres", "POSTGRES"), ("dept_a;DROP", "DEPT_A"), ("dept_"+"a"*32, "HR")])
 def test_managed_identifier_validation(database, key):
     with pytest.raises(ProvisioningError):

@@ -33,6 +33,9 @@ class PostgresProvisioner:
             raise ProvisioningError("database_connect_denied" if denied else "database_connection_failed") from None
 
     def ensure_resources(self, database, owner, credentials, department_id):
+        expected_owner, expected_runtime = identities(database, database.upper())
+        if owner != expected_owner or credentials.username != expected_runtime:
+            raise ProvisioningError("unmanaged_database_identity")
         marker = "ai-platform:department:" + department_id
         with self.connect() as conn:
             provisioner = conn.execute("SELECT current_user").fetchone()[0]

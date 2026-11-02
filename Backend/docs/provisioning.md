@@ -45,6 +45,10 @@ The document developer must:
 3. Provide a deployment-local contract JSON with `ready: true`, that revision in
    `required_revision` (not `head`), and the mandatory public table names in
    `required_tables`. Include `_provisioning_identity` alongside document tables.
+   The CLI rejects `tenant_0001`, revision aliases, missing identity requirements,
+   and contracts that contain only provisioning/Alembic metadata even if ready is
+   manually set to true. The infrastructure test may still call the foundation
+   migrator directly, while keeping Legal failed.
 4. Agree table/sequence privileges. Current runtime grants are CRUD on public
    business tables; immutable/audit tables may need narrower policies in their
    migrations before adding them. Views, other schemas, required columns and
