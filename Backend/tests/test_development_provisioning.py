@@ -58,7 +58,7 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
         existing=c.execute("SELECT d.id,d.name,d.status,r.database_name,r.credential_key,r.status FROM departments d JOIN department_databases r ON r.department_id=d.id WHERE d.name IN ('HR','Finance') ORDER BY d.name").fetchall()
         assert len(existing)==2
         assert c.execute("SELECT count(*) FROM users WHERE email IN ('admin@example.com','hr.manager@example.com','finance.employee@example.com')").fetchone()[0] == 3
-        acl_snapshot=c.execute("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database WHERE NOT datistemplate ORDER BY datname").fetchall()
+        acl_snapshot=c.execute("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database ORDER BY datname").fetchall()
         (state/"owners-acls-before.json").write_text(json.dumps(acl_snapshot,indent=2))
         # Keep these credentials out of source, environment listings, and reports.
         accounts={}
@@ -84,7 +84,7 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
     with connect("postgres") as c:
         for database,role in [("hr_db","hr_app"),("finance_db","finance_app")]:
             c.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(database),sql.Identifier(role)))
-        for database in ["postgres","ai_platform_db","hr_db","finance_db"]:
+        for database in ["postgres","ai_platform_db","hr_db","finance_db","template1"]:
             c.execute(sql.SQL("REVOKE CONNECT ON DATABASE {} FROM PUBLIC").format(sql.Identifier(database)))
 
     def url_for(name,database="ai_platform_db"):
@@ -93,11 +93,11 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
     registry=create_engine(url_for("day1_registry"),hide_parameters=True,pool_size=3,max_overflow=2)
     pg=PostgresProvisioner(url_for("day1_provisioner","postgres"))
     migrator=TenantMigrator("tenant_0001",["_provisioning_identity"])
-    worker=Worker(registry,pg,credential_store,UnavailableTenantContract())
+    worker=Worker(registry,pg,credential_store,UnavailableTenantContract(),max_attempts=10)
     legal_id,database,key=legal
     with Session(registry) as s:
         r=s.scalar(select(DepartmentDatabase).where(DepartmentDatabase.department_id==legal_id))
-        already_blocked=r.status=="failed" and r.last_error_code=="tenant_contract_unavailable"
+        already_blocked=r.status=="failed" and r.last_error_code=="tenant_contract_unavailable" and r.next_retry_at is None
     if not already_blocked:
         assert worker.run(legal_id,retry_failed=True)=="failed"
     with Session(registry) as s:
@@ -128,7 +128,7 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
         for statement in ["CREATE DATABASE day1_forbidden_db", "CREATE ROLE day1_forbidden_role"]:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute(statement)
-    for other in ["hr_db","finance_db","ai_platform_db","postgres"]:
+    for other in ["hr_db","finance_db","ai_platform_db","postgres","template1"]:
         with pytest.raises(ProvisioningError, match="database_connect_denied"):
             pg.connect(other,secret_before)
     elevated=restrict_runtime_engine(create_engine(admin,hide_parameters=True))
@@ -139,6 +139,8 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
         elevated.dispose()
     # Route through the real RBAC and credential resolver as the non-admin API DB role.
     api_file=state/"api.json"; api_file.write_text(json.dumps({"url":url_for("day1_api").render_as_string(hide_password=False)})); api_file.chmod(0o600)
+    for filename,name,database_name in [("registry.json","day1_registry","ai_platform_db"),("provisioner.json","day1_provisioner","postgres")]:
+        path=state/filename; path.write_text(json.dumps({"url":url_for(name,database_name).render_as_string(hide_password=False)})); path.chmod(0o600)
     os.environ.update(DATABASE_URL_FILE=str(api_file),DEPARTMENT_CREDENTIALS_DIR=str(state/"tenants"),DB_HOST=admin.host,DB_PORT=str(admin.port or 5432))
     from app.database_router import authorized_department_session
     from app.database import engine as api_engine
@@ -156,7 +158,7 @@ def test_existing_legal_provisioning_without_modifying_hr_finance():
     assert before==after
     with connect("ai_platform_db") as c:
         assert c.execute("SELECT d.id,d.name,d.status,r.database_name,r.credential_key,r.status FROM departments d JOIN department_databases r ON r.department_id=d.id WHERE d.name IN ('HR','Finance') ORDER BY d.name").fetchall()==existing
-    report={"legal_id":legal_id,"database":database,"status":"failed","blocker":"tenant_contract_unavailable","foundation_revision":"tenant_0001","document_schema":"pending document developer; foundation cannot activate Legal","hr_finance_data_unchanged":True,"hr_finance_registry_unchanged":True,"resource_replay_noop":True,"runtime_privilege_checks":"passed","cross_database_connections":"denied","acl_change":"PUBLIC CONNECT revoked on four development databases; existing HR/Finance app CONNECT preserved explicitly","snapshots":before}
+    report={"legal_id":legal_id,"database":database,"status":"failed","blocker":"tenant_contract_unavailable","foundation_revision":"tenant_0001","document_schema":"pending document developer; foundation cannot activate Legal","hr_finance_data_unchanged":True,"hr_finance_registry_unchanged":True,"resource_replay_noop":True,"runtime_privilege_checks":"passed","cross_database_connections":"denied including template1","acl_change":"PUBLIC CONNECT revoked on five development databases including template1; existing HR/Finance app CONNECT preserved explicitly","snapshots":before}
     (state/"verification.json").write_text(json.dumps(report,indent=2,default=str))
     print(json.dumps({k:v for k,v in report.items() if k!="snapshots"}))
     registry.dispose(); api_engine.dispose()

@@ -117,7 +117,8 @@ class Worker:
             row.claim_token = None
             row.applied_revision = revision if status == "active" else row.applied_revision
             row.verified_contract = self.migrator.contract_id if status == "active" else None
-            row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=self.retry_seconds * 2 ** (job.attempt - 1)) if status == "failed" and job.attempt < self.max_attempts else None
+            retryable = code in {"infrastructure_error", "database_connection_failed"}
+            row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=self.retry_seconds * 2 ** (job.attempt - 1)) if status == "failed" and retryable and job.attempt < self.max_attempts else None
 
 
 def main():
@@ -133,6 +134,7 @@ def main():
             with Session(engine) as session:
                 ids = [args.department_id] if args.department_id else list(session.scalars(select(DepartmentDatabase.department_id).where(DepartmentDatabase.status.in_(["provisioning", "failed"]))))
             failed = False
+            pending = False
             for department_id in ids:
                 try:
                     status = worker.run(department_id, args.retry_failed)
@@ -141,8 +143,9 @@ def main():
                     status = "worker_error"
                 print(json.dumps({"department_id": department_id, "status": status}), flush=True)
                 failed |= status in {"failed", "worker_error"}
+                pending |= status in {"busy", "deferred"}
             if args.poll <= 0:
-                return 1 if failed else 0
+                return 1 if failed else (2 if args.department_id and pending else 0)
             time.sleep(args.poll)
     finally:
         engine.dispose()

@@ -89,7 +89,7 @@ class PostgresProvisioner:
                 raise ProvisioningError("runtime_ddl_privilege")
             # Cluster ACL policy is an operator prerequisite; never modify HR,
             # Finance or any other database to make this check pass.
-            if conn.execute("SELECT EXISTS(SELECT 1 FROM pg_database WHERE NOT datistemplate AND datname<>current_database() AND has_database_privilege(current_user,oid,'CONNECT'))").fetchone()[0]:
+            if conn.execute("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datallowconn AND datname<>current_database() AND has_database_privilege(current_user,oid,'CONNECT'))").fetchone()[0]:
                 raise ProvisioningError("cross_database_connect")
             if conn.execute("SELECT department_id FROM public._provisioning_identity WHERE singleton=1").fetchone() != (department_id,):
                 raise ProvisioningError("tenant_identity_conflict")
