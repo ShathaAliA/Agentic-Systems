@@ -7,6 +7,12 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Day 1 setup, migration interface and worker operation](Backend/docs/provisioning.md)
 - [Architecture audit](Backend/docs/provisioning-audit.md)
 - [Development verification results and outstanding blockers](Backend/docs/day1-verification.md)
+- [Subtask 2.1: development authentication, enrollment and tests](Backend/docs/authentication.md)
+
+Authentication is disabled by default. Subtask 2.1 adds development-only password
+login, expiring/revocable opaque sessions, `GET /auth/me`, and reusable RBAC
+dependencies. Enable it only after the documented central migration, restricted
+grants and offline enrollment; Microsoft Entra integration remains pending.
 
 ## Tests
 
