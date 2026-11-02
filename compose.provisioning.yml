@@ -5,6 +5,9 @@ services:
     build: ./Backend
     image: ai-platform-day1:dev
     environment:
+      APP_ENV: development
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      AUTH_SESSION_SECONDS: ${AUTH_SESSION_SECONDS:-900}
       DATABASE_URL_FILE: /run/secrets/api_url
       DEPARTMENT_CREDENTIALS_DIR: /credentials
       DB_HOST: postgres
