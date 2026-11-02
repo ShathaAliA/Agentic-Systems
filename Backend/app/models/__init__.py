@@ -291,12 +291,14 @@ class DepartmentDatabase(Base):
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     applied_revision: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    verified_contract: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('provisioning', 'active', 'failed')",
             name="ck_department_databases_status",
         ),
+        CheckConstraint("attempt_count >= 0", name="ck_provisioning_attempt_count"),
     )
 
     id: Mapped[str] = mapped_column(

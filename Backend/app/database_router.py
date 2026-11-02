@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.database import engine as central_engine
 from app.models import DepartmentDatabase
 from app.services.authorization import has_permission
+from app.credentials import resolve_department_credentials
+from app.runtime_security import restrict_runtime_engine
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,8 +43,8 @@ def create_department_engine(database_name, credential_key):
 
     prefix = credential_key.upper()
 
-    username = os.getenv(f"{prefix}_DB_USER")
-    password = os.getenv(f"{prefix}_DB_PASSWORD")
+    credentials = resolve_department_credentials(prefix)
+    username, password = credentials.username, credentials.password
 
     if not username or not password:
         raise RuntimeError(
@@ -58,13 +60,14 @@ def create_department_engine(database_name, credential_key):
         database=database_name,
     )
 
-    return create_engine(
+    return restrict_runtime_engine(create_engine(
         database_url,
         pool_pre_ping=True,
         pool_size=2,
         max_overflow=1,
         pool_timeout=10,
-    )
+        hide_parameters=True,
+    ))
 
 
 def get_department_engine(

@@ -16,3 +16,4 @@ __pycache__/
 .vscode/
 .pytest_cache/
 *.log
+.local/
