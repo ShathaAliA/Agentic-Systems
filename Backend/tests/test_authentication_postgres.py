@@ -45,14 +45,13 @@ def isolated_postgres():
     os.environ["CENTRAL_MIGRATION_DATABASE_URL_FILE"] = os.environ["AUTH_TEST_ADMIN_URL_FILE"]
     cfg = Config("alembic.ini")
     command.upgrade(cfg, "p002")
-    with Session(admin) as s:
-        s.add_all([User(id="existing-user", name="Existing", email="existing@example.invalid"),
-                   Department(id="existing-department", name="Existing Department", status="failed")])
-        s.flush()
-        s.add(DepartmentDatabase(id="existing-registry", department_id="existing-department",
-                                database_name="existing_test_reference", credential_key="EXISTING_TEST_REFERENCE",
-                                status="failed", last_error_code="tenant_contract_unavailable"))
-        s.commit()
+    with admin.connect() as c:
+        assert c.scalar(text("SELECT count(*) FROM departments")) == 0  # No production/demo seeds.
+    # Insert through the historical schema, before later model columns exist.
+    with admin.begin() as c:
+        c.execute(text("INSERT INTO users(id,name,email,status,created_at) VALUES ('existing-user','Existing','existing@example.invalid','active',CURRENT_TIMESTAMP)"))
+        c.execute(text("INSERT INTO departments(id,name,status) VALUES ('existing-department','Existing Department','failed')"))
+        c.execute(text("INSERT INTO department_databases(id,department_id,database_name,credential_key,status,last_error_code,created_at) VALUES ('existing-registry','existing-department','existing_test_reference','EXISTING_TEST_REFERENCE','failed','tenant_contract_unavailable',CURRENT_TIMESTAMP)"))
     with admin.connect() as c:
         before = {table: c.execute(text(f"SELECT * FROM {table} ORDER BY id")).all()
                   for table in ("users", "departments", "department_databases")}
@@ -62,6 +61,8 @@ def isolated_postgres():
         for table, expected in before.items():
             assert c.execute(text(f"SELECT * FROM {table} ORDER BY id")).all() == expected
         assert c.scalar(text("SELECT version_num FROM alembic_version")) == "auth001"
+    # Application models also include the subsequent additive department metadata.
+    command.upgrade(cfg, "head")
     password = seed_auth_users(admin)
     api_password = secrets.token_urlsafe(32)
     params = dict(host=admin_url.host, port=admin_url.port or 5432, dbname=admin_url.database,

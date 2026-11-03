@@ -1,7 +1,9 @@
 #requires -Version 7.2
 param(
     [string]$Docker = "docker",
-    [string]$Image = "ai-platform-day2:dev"
+    [string]$Image = "ai-platform-day2:dev",
+    [ValidateSet("tests/test_authentication_postgres.py", "tests/test_departments_postgres.py")]
+    [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
@@ -64,7 +66,7 @@ try {
         "--mount", "type=bind,source=$state,target=/reports",
         "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
         "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", $Image,
-        "python", "-m", "pytest", "-q", "tests/test_authentication_postgres.py", "--tb=short", "-o", "cache_dir=/tmp/pytest_cache")
+        "python", "-m", "pytest", "-q", $TestFile, "--tb=short", "-o", "cache_dir=/tmp/pytest_cache")
 }
 finally {
     # Preserve the stopped test container and recovery artifacts. Never delete a database.
