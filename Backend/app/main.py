@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth.config import AuthSettings
 from app.auth.routes import router as auth_router
+from app.departments.routes import router as departments_router
 
 
 def create_app(*, central_engine=None, auth_settings=None):
@@ -13,11 +14,12 @@ def create_app(*, central_engine=None, auth_settings=None):
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
     app.include_router(auth_router)
+    app.include_router(departments_router)
 
     @app.middleware("http")
     async def prevent_auth_caching(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/auth/"):
+        if request.url.path.startswith(("/auth/", "/admin/", "/me/", "/departments/")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         return response

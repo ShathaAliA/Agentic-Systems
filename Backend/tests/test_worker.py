@@ -225,3 +225,30 @@ def test_migrator_rejects_unmanaged_targets_before_opening_connection(monkeypatc
 def test_managed_identifier_validation(database, key):
     with pytest.raises(ProvisioningError):
         identities(database, key)
+
+
+def test_archived_department_is_ignored_even_when_registry_is_active(setup):
+    w, pg, _ = setup
+    assert w.run("legal") == "active"
+    with Session(w.engine) as s, s.begin():
+        s.get(Department, "legal").archived_at = datetime.now(timezone.utc)
+    assert w.run("legal", retry_failed=True) == "archived"
+    pg.ensure_resources.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_archive_during_provisioning_fences_both_success_and_failure(setup, failure):
+    w, pg, _ = setup
+    def archive_during_verify(*args):
+        with Session(w.engine) as s, s.begin():
+            s.get(Department, "legal").archived_at = datetime.now(timezone.utc)
+            s.scalar(select(DepartmentDatabase)).claim_token = None
+        if failure:
+            raise ProvisioningError("required_table_missing")
+    pg.verify.side_effect = archive_during_verify
+    assert w.run("legal") == "archived"
+    with Session(w.engine) as s:
+        assert s.get(Department, "legal").archived_at is not None
+        row = s.scalar(select(DepartmentDatabase))
+        assert row.status == "provisioning" and row.verified_contract is None
+        assert row.claim_token is None

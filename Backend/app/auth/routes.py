@@ -63,7 +63,7 @@ def me(user: User = Depends(get_current_user), session: Session = Depends(get_ce
         select(DepartmentMembership.department_id)
         .join(Department, Department.id == DepartmentMembership.department_id)
         .where(DepartmentMembership.user_id == user.id, DepartmentMembership.status == "active",
-               Department.status == "active")
+               Department.status == "active", Department.archived_at.is_(None))
     ))
     roles = [RoleProfile(name=name, scope=scope, department_id=department_id)
              for name, scope, department_id in rows

@@ -56,9 +56,11 @@ class Worker:
             now = datetime.now(timezone.utc)
             with Session(self.engine) as session, session.begin():
                 registry = session.scalar(select(DepartmentDatabase).where(DepartmentDatabase.department_id == department_id).with_for_update())
-                department = session.get(Department, department_id)
+                department = session.scalar(select(Department).where(Department.id == department_id).with_for_update())
                 if registry is None or department is None:
                     raise ProvisioningError("department_not_registered")
+                if department.archived_at is not None:
+                    return "archived"
                 if registry.status == "active":
                     if not registry.database_name.startswith("dept_"):
                         return "active"  # Legacy HR/Finance are outside this worker's scope.
@@ -102,23 +104,29 @@ class Worker:
                 code = exc.code if isinstance(exc, ProvisioningError) else "infrastructure_error"
                 if code not in SAFE_ERROR_CODES:
                     code = "infrastructure_error"
-                self.finish(job, "failed", code=code)
-                return "failed"
-            self.finish(job, "active", revision=revision)
-            return "active"
+                applied = self.finish(job, "failed", code=code)
+                return "failed" if applied else "archived"
+            applied = self.finish(job, "active", revision=revision)
+            return "active" if applied else "archived"
 
     def finish(self, job, status, code=None, revision=None):
         with Session(self.engine) as session, session.begin():
             row = session.scalar(select(DepartmentDatabase).where(DepartmentDatabase.department_id == job.department_id).with_for_update())
+            department = session.scalar(select(Department).where(Department.id == job.department_id).with_for_update())
+            if department is None or row is None:
+                raise ProvisioningError("department_not_registered")
+            if department.archived_at is not None:
+                return False
             if row.claim_token != job.claim:
                 raise ProvisioningError("stale_claim")
-            row.status = session.get(Department, job.department_id).status = status
+            row.status = department.status = status
             row.last_error_code = code
             row.claim_token = None
             row.applied_revision = revision if status == "active" else row.applied_revision
             row.verified_contract = self.migrator.contract_id if status == "active" else None
             retryable = code in {"infrastructure_error", "database_connection_failed"}
             row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=self.retry_seconds * 2 ** (job.attempt - 1)) if status == "failed" and retryable and job.attempt < self.max_attempts else None
+            return True
 
 
 def main():
@@ -132,7 +140,9 @@ def main():
     try:
         while True:
             with Session(engine) as session:
-                ids = [args.department_id] if args.department_id else list(session.scalars(select(DepartmentDatabase.department_id).where(DepartmentDatabase.status.in_(["provisioning", "failed"]))))
+                ids = [args.department_id] if args.department_id else list(session.scalars(
+                    select(DepartmentDatabase.department_id).join(Department, Department.id == DepartmentDatabase.department_id)
+                    .where(DepartmentDatabase.status.in_(["provisioning", "failed"]), Department.archived_at.is_(None))))
             failed = False
             pending = False
             for department_id in ids:
@@ -143,7 +153,7 @@ def main():
                     status = "worker_error"
                 print(json.dumps({"department_id": department_id, "status": status}), flush=True)
                 failed |= status in {"failed", "worker_error"}
-                pending |= status in {"busy", "deferred"}
+                pending |= status in {"busy", "deferred", "archived"}
             if args.poll <= 0:
                 return 1 if failed else (2 if args.department_id and pending else 0)
             time.sleep(args.poll)

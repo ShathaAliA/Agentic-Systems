@@ -10,7 +10,7 @@ from sqlalchemy import URL, create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database import engine as central_engine
-from app.models import DepartmentDatabase
+from app.models import Department, DepartmentDatabase
 from app.services.authorization import has_permission
 from app.credentials import resolve_department_credentials
 from app.runtime_security import restrict_runtime_engine
@@ -131,9 +131,10 @@ def authorized_department_session(
             )
 
         database_config = central_session.scalar(
-            select(DepartmentDatabase).where(
+            select(DepartmentDatabase).join(Department, Department.id == DepartmentDatabase.department_id).where(
                 DepartmentDatabase.department_id == department_id,
                 DepartmentDatabase.status == "active",
+                Department.archived_at.is_(None),
             )
         )
 
