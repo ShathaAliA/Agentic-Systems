@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-
+from app.documents.router import router as documents_router
 from app.database import check_database_connection
 
 app = FastAPI(
@@ -8,6 +8,7 @@ app = FastAPI(
     description="Backend API for the AI Platform",
     version="0.1.0",
 )
+app.include_router(documents_router)
 
 
 @app.get("/")
