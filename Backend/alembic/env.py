@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from app.credentials import configured_url
 from app.models import Base
 from app.auth import models as auth_models  # Register additive central auth tables.
+from app.departments import models as department_models  # Central administration only.
 
 
 config = context.config

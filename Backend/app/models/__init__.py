@@ -71,6 +71,9 @@ class User(Base):
 class Department(Base):
     __tablename__ = "departments"
 
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
