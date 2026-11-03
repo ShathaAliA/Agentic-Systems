@@ -1,0 +1,6 @@
+{
+  "ready": false,
+  "required_revision": null,
+  "required_tables": [],
+  "pending": "Document developer must supply versioned tenant migrations and required tables; tenant_0001 is foundation only."
+}

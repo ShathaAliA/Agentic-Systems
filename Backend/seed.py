@@ -2,7 +2,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import engine
+import os
 from app.models import (
     User,
     Department,
@@ -30,8 +30,14 @@ def get_or_create(session, model, lookup, defaults=None):
     return instance
 
 
-def seed():
-    with Session(engine) as session:
+def seed(*, development_fixtures=False, central_engine=None):
+    if not development_fixtures or os.getenv("APP_ENV") != "development":
+        raise RuntimeError("Demo seed requires APP_ENV=development and explicit --development-fixtures")
+    if central_engine is None:
+        from app.database import engine as central_engine
+    from app.departments.models import CreationGrant
+    from app.departments.service import normalize_name
+    with Session(central_engine) as session:
         with session.begin():
 
             # 1. Departments
@@ -41,6 +47,13 @@ def seed():
             finance = get_or_create(
                 session, Department, {"name": "Finance"}
             )
+
+            # Explicit fixtures added after dept001 must also reserve their names.
+            # Existing ownership is retained; head reconciliation remains explicit.
+            for department in (hr, finance):
+                name, key = normalize_name(department.name)
+                get_or_create(session, CreationGrant, {"department_id": department.id},
+                              {"name": name, "normalized_name": key, "state": "consumed"})
 
             # 2. Roles
             role_definitions = {
@@ -183,4 +196,8 @@ def seed():
 
 
 if __name__ == "__main__":
-    seed()
+    import argparse
+    parser = argparse.ArgumentParser(description="Explicit development fixtures only; never run for production")
+    parser.add_argument("--development-fixtures", action="store_true")
+    args = parser.parse_args()
+    seed(development_fixtures=args.development_fixtures)

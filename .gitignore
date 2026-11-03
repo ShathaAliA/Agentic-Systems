@@ -1,20 +1,28 @@
+# Environment variables
 .env
 .env.*
 !.env.example
 !.env.*.example
 
+# Python virtual environments
 .venv/
 venv/
+
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 
+# IDE and Local Storage
 .vscode/
+.local/
 node_modules/
 chroma_db/
 uploads/
 storage/
 
+# Logs and Backups
 *.log
 *.dump
 *.backup
