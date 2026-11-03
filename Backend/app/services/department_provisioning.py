@@ -1,126 +1,31 @@
-
-import uuid
-
-from sqlalchemy import func, select
+"""Day 1 compatibility wrapper around the transactional central registration service."""
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import engine
-from app.models import (
-    Department,
-    DepartmentDatabase,
-    Permission,
-    Role,
-    RoleAssignment,
-    RolePermission,
-    User,
-)
+from app.departments.service import DepartmentError, admin_create, is_admin
+from app.models import DepartmentDatabase
 
 
 def is_global_department_admin(session: Session, user_id: str) -> bool:
-    """Check global permission to manage departments."""
-
-    user = session.get(User, user_id)
-
-    if user is None or user.status != "active":
-        return False
-
-    permission_id = session.scalar(
-        select(Permission.id)
-        .join(
-            RolePermission,
-            RolePermission.permission_id == Permission.id,
-        )
-        .join(Role, Role.id == RolePermission.role_id)
-        .join(
-            RoleAssignment,
-            RoleAssignment.role_id == Role.id,
-        )
-        .where(
-            RoleAssignment.user_id == user_id,
-            RoleAssignment.department_id.is_(None),
-            Role.scope == "global",
-            Permission.code == "departments:manage",
-        )
-        .limit(1)
-    )
-
-    return permission_id is not None
+    return is_admin(session, user_id)
 
 
-def request_department_creation(
-    admin_user_id: str,
-    department_name: str,
-) -> dict:
-    """
-    Register a new department for provisioning.
-
-    This does NOT create a PostgreSQL database.
-    admin_user_id must come from a trusted authentication
-    context, never directly from an API request body.
-    """
-
-    name = department_name.strip()
-
-    if not name or len(name) > 150:
-        raise ValueError(
-            "Department name must be between 1 and 150 characters"
-        )
-
-    department_id = str(uuid.uuid4())
-    unique_id = uuid.uuid4().hex
-
-    # Immutable database identity; independent of department name.
-    database_name = f"dept_{unique_id}"
-    credential_key = f"DEPT_{unique_id.upper()}"
-
+def request_department_creation(admin_user_id: str, department_name: str, *, central_engine=None) -> dict:
+    """Trusted actor only. Register work; never create a PostgreSQL database here."""
+    if central_engine is None:
+        from app.database import engine as central_engine
     try:
-        with Session(engine) as session:
-            with session.begin():
-
-                if not is_global_department_admin(
-                    session, admin_user_id
-                ):
-                    raise PermissionError(
-                        "Only authorized admins can create departments"
-                    )
-
-                existing = session.scalar(
-                    select(Department.id).where(
-                        func.lower(Department.name) == name.lower()
-                    )
-                )
-
-                if existing is not None:
-                    raise ValueError(
-                        "Department already exists"
-                    )
-
-                department = Department(
-                    id=department_id,
-                    name=name,
-                    status="provisioning",
-                )
-
-                database_registry = DepartmentDatabase(
-                    id=str(uuid.uuid4()),
-                    department_id=department_id,
-                    database_name=database_name,
-                    credential_key=credential_key,
-                    status="provisioning",
-                )
-
-                session.add(department)
-                session.add(database_registry)
-
-    except IntegrityError as exc:
-        raise ValueError(
-            "Department could not be registered"
-        ) from exc
-
-    return {
-        "department_id": department_id,
-        "department_name": name,
-        "database_name": database_name,
-        "status": "provisioning",
-    }
+        with Session(central_engine) as session, session.begin():
+            department = admin_create(session, admin_user_id, department_name)
+            registry = session.scalar(select(DepartmentDatabase).where(
+                DepartmentDatabase.department_id == department.id))
+            # Retain the internal Day 1 response. HTTP routes expose safe DTOs only.
+            return {"department_id": department.id, "department_name": department.name,
+                    "database_name": registry.database_name, "status": department.status}
+    except DepartmentError as error:
+        if error.status == 403:
+            raise PermissionError("Only authorized admins can create departments") from None
+        raise ValueError(error.code) from None
+    except IntegrityError:
+        raise ValueError("Department could not be registered") from None
