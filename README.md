@@ -8,11 +8,18 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Architecture audit](Backend/docs/provisioning-audit.md)
 - [Development verification results and outstanding blockers](Backend/docs/day1-verification.md)
 - [Subtask 2.1: development authentication, enrollment and tests](Backend/docs/authentication.md)
+- [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
 
 Authentication is disabled by default. Subtask 2.1 adds development-only password
 login, expiring/revocable opaque sessions, `GET /auth/me`, and reusable RBAC
 dependencies. Enable it only after the documented central migration, restricted
 grants and offline enrollment; Microsoft Entra integration remains pending.
+
+Subtask 2.2 adds Admin-issued department-name grants, one owned department per
+head, protected department APIs and archival without data deletion. Fresh migrations
+create no departments. HR/Finance are explicit development fixtures only:
+`APP_ENV=development` and `python seed.py --development-fixtures` from `Backend/`.
+See the setup guide before applying the central migration or changing grants.
 
 ## Tests
 
