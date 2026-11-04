@@ -11,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     CheckConstraint,
     text,
+    func,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -67,6 +68,9 @@ class User(Base):
 # =====================================
 # DEPARTMENTS
 # =====================================
+
+Index("uq_users_normalized_email", func.lower(func.trim(User.email)), unique=True)
+
 
 class Department(Base):
     __tablename__ = "departments"
@@ -241,6 +245,7 @@ class RoleAssignment(Base):
             postgresql_where=text(
                 "department_id IS NULL"
             ),
+            sqlite_where=text("department_id IS NULL"),
         ),
         Index(
             "uq_department_role_assignment",
@@ -251,6 +256,7 @@ class RoleAssignment(Base):
             postgresql_where=text(
                 "department_id IS NOT NULL"
             ),
+            sqlite_where=text("department_id IS NOT NULL"),
         ),
     )
 

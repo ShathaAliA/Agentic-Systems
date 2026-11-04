@@ -217,6 +217,8 @@ def test_case_insensitive_login_and_ambiguous_email_rejected(auth):
     client, engine, password = auth
     response = client.post("/auth/dev/login", json={"email": " EMPLOYEE@EXAMPLE.INVALID ", "password": password})
     assert response.status_code == 200
+    # Exercise a legacy pre-users001 database with ambiguous email identities.
+    next(index for index in User.__table__.indexes if index.name == "uq_users_normalized_email").drop(engine)
     with Session(engine) as s:
         s.add(User(id="duplicate", name="Duplicate", email="EMPLOYEE@example.invalid"))
         s.commit()
