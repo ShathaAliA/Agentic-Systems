@@ -1,4 +1,8 @@
-# Subtask 2.4: question credits, usage and company budget
+# Independent task U1: question credits, usage and company budget
+
+Tracking correction: this work was originally labeled Subtask 2.4. It is now U1;
+the original 2.4 is Roles & Permissions APIs. Code, migration `usage001` and the
+six existing local commits retain their technical identities; history is not rewritten.
 
 Central accounting foundation only. It imports no document/RAG/provider SDK and
 makes no external model calls. There is no public question-processing or billing

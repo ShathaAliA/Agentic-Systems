@@ -1,4 +1,8 @@
-# Subtask 2.4 verification — 2026-11-04
+# Independent task U1 verification — 2026-11-04
+
+Tracking correction only: originally implemented under the 2.4 label. U1 is
+independent of the original Roles & Permissions APIs task. Recorded test results
+and migration/commit identities below are unchanged.
 
 Branch: `feature/core-backend`, based on published `ef4d30a`. Accounting foundation
 only; no actual provider calls, document/RAG changes, push, merge or deployment.
