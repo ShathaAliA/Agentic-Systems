@@ -23,8 +23,8 @@ Legal remains failed. Test schema contracts do not establish real document readi
 | 2.1 Secure development authentication | Implemented and published |
 | 2.2 Departments APIs | Implemented and published |
 | 2.3 Users & Memberships APIs | Implemented and published; also includes approved-role assignment/revocation |
-| 2.4 Roles & Permissions APIs | Implemented locally; verification and limits in role-permissions.md |
-| 2.5 Endpoint protection and permission tests | Applied to existing Core routes; final cross-route matrix remains to be consolidated |
+| 2.4 Roles & Permissions APIs | Implemented and published; verification and limits in role-permissions.md |
+| 2.5 Endpoint protection and permission tests | Implemented locally; cross-route policy inventory, identity matrix and Core isolation tests in core-access-contract.md |
 
 ## Day 3 — Testing, Integration & Deployment
 
@@ -38,7 +38,7 @@ Legal remains failed. Test schema contracts do not establish real document readi
 
 ## Independent U1 — credits, usage and company budget
 
-Implemented locally with six unpushed commits based on `ef4d30a`. Recorded validation:
+Implemented in six commits based on `ef4d30a`, subsequently published with 2.4. Recorded validation:
 130 non-integration tests, 23 PostgreSQL integration tests. This is a tested
 accounting foundation with fake processing; real provider/RAG/billing integration
 and original-stack activation are pending. See `usage.md` and `usage-verification.md`.
