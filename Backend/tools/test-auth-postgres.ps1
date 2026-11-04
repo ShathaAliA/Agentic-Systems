@@ -2,7 +2,7 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-day2:dev",
-    [ValidateSet("tests/test_authentication_postgres.py", "tests/test_departments_postgres.py")]
+    [ValidateSet("tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
@@ -49,7 +49,9 @@ try {
         "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
-        & $Docker exec $container pg_isready -U auth_test_owner -d auth_test_db *> $null
+        # The image's temporary initialization server accepts Unix sockets before
+        # restarting. TCP is available only on the final server used by tests.
+        & $Docker exec $container pg_isready -h 127.0.0.1 -U auth_test_owner -d auth_test_db *> $null
         if ($LASTEXITCODE -eq 0) { $ready = $true; break }
         Start-Sleep -Milliseconds 500
     }
