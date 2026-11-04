@@ -23,7 +23,7 @@ Legal remains failed. Test schema contracts do not establish real document readi
 | 2.1 Secure development authentication | Implemented and published |
 | 2.2 Departments APIs | Implemented and published |
 | 2.3 Users & Memberships APIs | Implemented and published; also includes approved-role assignment/revocation |
-| 2.4 Roles & Permissions APIs | Partial role catalog/assignments exist; completion plan below awaits approval |
+| 2.4 Roles & Permissions APIs | Implemented locally; verification and limits in role-permissions.md |
 | 2.5 Endpoint protection and permission tests | Applied to existing Core routes; final cross-route matrix remains to be consolidated |
 
 ## Day 3 — Testing, Integration & Deployment
@@ -43,7 +43,7 @@ Implemented locally with six unpushed commits based on `ef4d30a`. Recorded valid
 accounting foundation with fake processing; real provider/RAG/billing integration
 and original-stack activation are pending. See `usage.md` and `usage-verification.md`.
 
-## Proposed completion of 2.4 — approval required before implementation
+## Approved completion of 2.4
 
 Existing `/admin/roles` and user-role assignment/revocation APIs remain intact.
 Add Admin-only permission catalog, role detail and role-to-permission views, then

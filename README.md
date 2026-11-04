@@ -46,3 +46,5 @@ This requires the existing local `ai_platform_postgres`, HR/Finance seed records
 and an already-registered Legal department. It never drops databases. The document
 schema contract is currently unavailable, so **Legal must remain failed**, not
 active. The supplied tenant contract example intentionally has `ready: false`.
+
+Roles & Permissions APIs: [setup, policy matrix and verification](Backend/docs/role-permissions.md).
