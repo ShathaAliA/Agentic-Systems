@@ -9,6 +9,7 @@ from app.auth import models as auth_models  # Register additive central auth tab
 from app.departments import models as department_models  # Central administration only.
 from app.users import models as user_models
 from app.usage import models as usage_models
+from app.role_policies import models as role_policy_models
 
 
 config = context.config
