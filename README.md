@@ -9,6 +9,7 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Development verification results and outstanding blockers](Backend/docs/day1-verification.md)
 - [Subtask 2.1: development authentication, enrollment and tests](Backend/docs/authentication.md)
 - [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
+- [Subtask 2.3: central users, memberships and approved roles](Backend/docs/users.md)
 
 Authentication is disabled by default. Subtask 2.1 adds development-only password
 login, expiring/revocable opaque sessions, `GET /auth/me`, and reusable RBAC
