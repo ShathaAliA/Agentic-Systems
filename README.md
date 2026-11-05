@@ -55,3 +55,9 @@ Roles & Permissions APIs: [setup, policy matrix and verification](Backend/docs/r
 Core endpoint access policy and test matrix: [Subtask 2.5](Backend/docs/core-access-contract.md).
 
 PostgreSQL physical isolation and least-privilege grant policy: [Subtask 3.2](Backend/docs/postgres-isolation.md).
+
+Core/document integration: [V1 contract, proposed API and ownership gates](Backend/docs/document-integration-contract.md).
+The operator-owned `Backend/tenant-contract.example.json` remains unready. Its V1
+schema is in `Backend/contracts/tenant-v1.schema.json`; supply an agreed pinned
+business migration and reviewed explicit privileges before requesting activation.
+The API DTOs under `Backend/contracts/` are proposals, not live document endpoints.
