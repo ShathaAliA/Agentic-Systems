@@ -26,3 +26,8 @@ storage/
 *.log
 *.dump
 *.backup
+
+
+check_db.py
+enable_vector.py
+central_migration.json
