@@ -32,8 +32,8 @@ Legal remains failed. Test schema contracts do not establish real document readi
 | --- | --- |
 | 3.1 Unit/integration tests | Core execution safety, unified runner and cross-module tests implemented and published; real document integration pending |
 | 3.2 PostgreSQL isolation/security | Physical PostgreSQL isolation and grant-policy hardening implemented and published; real document-schema integration pending |
-| 3.3 API contract with document developer | Core V1 loader, grant forwarding, synthetic tests and API proposal implemented locally; joint agreement and real document integration pending; see document-integration-contract.md |
-| 3.4 Docker/environment/README | Development setup documented; production activation pending |
+| 3.3 API contract with document developer | Core V1 loader, grant forwarding, synthetic tests and API proposal implemented and published; joint agreement and real document integration pending; see document-integration-contract.md |
+| 3.4 Docker/environment/README | Runtime/test image separation, local Compose hardening and environment/setup guide implemented locally; Docker engine verification blocked; see core-containers.md and core-containers-verification.md; production activation pending |
 | 3.5 Code review/Pull Request | Earlier Core commits reviewed/published; no PR created |
 
 ## Independent U1 — credits, usage and company budget
