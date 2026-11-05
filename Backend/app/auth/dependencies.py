@@ -36,7 +36,7 @@ def get_auth_context(
 
 def get_current_user(context=Depends(get_auth_context)) -> User:
     return context.user
-    
+  
 def require_department_permission(permission_code: str):
     def check(department_id: str, user: User = Depends(get_current_user),
               session: Session = Depends(get_central_session)):

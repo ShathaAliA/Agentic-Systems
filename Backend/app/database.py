@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from fastapi import Form
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -40,3 +41,21 @@ def get_db():
 # (نحطها في النهاية عشان نتجنب Circular Import)
 from app.models import Base, User, Department, DepartmentMembership, Role, Permission, RolePermission, RoleAssignment, DepartmentDatabase
 from app.documents.models import Document, DocumentChunk
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from sqlalchemy import text
+
+def get_department_db(department_id: str = Form(...)):
+    """جلسة قاعدة بيانات خاصة بالقسم (Tenant DB)"""
+    db_url = f"postgresql://postgres:postgres@localhost:5435/wadi_db"
+    engine = create_engine(db_url)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        # نحدد search_path للقسم
+        db.execute(text(f"SET search_path TO {department_id}, public;"))
+        yield db
+    finally:
+        db.close()

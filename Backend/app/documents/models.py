@@ -31,3 +31,12 @@ class DocumentAuditLog(Base):
     action = Column(String(50), nullable=False) # upload, approve, archive
     performed_by = Column(String(36), nullable=False) # user_id
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    version_number = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False) # approved, archived, pending
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

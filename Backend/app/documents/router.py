@@ -5,8 +5,8 @@ import shutil
 import os
 import uuid
 
-from app.database import get_db
-from app.documents.models import Document, DocumentAuditLog # <-- ضفنا AuditLog
+from app.database import get_department_db
+from app.documents.models import Document, DocumentAuditLog, DocumentVersion # <-- ضفنا DocumentVersion
 from app.documents.ocr_service import extract_text_from_file
 from app.documents import rag_service
 from app.auth.dependencies import get_current_user
@@ -22,7 +22,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 async def upload_document(
     file: UploadFile = File(...),
     department_id: str = Form(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     if not has_permission(db, current_user.id, "documents:upload", department_id):
@@ -49,9 +49,17 @@ async def upload_document(
     
     if existing_doc:
         existing_doc.status = "archived"
-        # تدقيق الأرشفة
         audit_archive = DocumentAuditLog(document_id=existing_doc.id, action="archive", performed_by=current_user.id)
         db.add(audit_archive)
+        
+        # أرشفة الإصدار القديم
+        existing_version = db.query(DocumentVersion).filter(
+            DocumentVersion.document_id == existing_doc.id,
+            DocumentVersion.status == "approved"
+        ).first()
+        if existing_version:
+            existing_version.status = "archived"
+        
         db.commit()
     
     safe_filename = f"{uuid.uuid4()}{file_ext}"
@@ -75,7 +83,15 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
     
-    # تدقيق الرفع
+    # تسجيل الإصدار الجديد
+    new_version = DocumentVersion(
+        document_id=new_doc.id,
+        version_number=new_doc.version,
+        status="pending"
+    )
+    db.add(new_version)
+    db.commit()
+    
     audit_upload = DocumentAuditLog(document_id=new_doc.id, action="upload", performed_by=current_user.id)
     db.add(audit_upload)
     db.commit()
@@ -96,7 +112,8 @@ async def upload_document(
 @router.post("/{document_id}/approve")
 async def approve_document(
     document_id: int,
-    db: Session = Depends(get_db),
+    department_id: str,
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -107,7 +124,15 @@ async def approve_document(
         raise HTTPException(status_code=403, detail="Permission denied")
     
     doc.status = "approved"
-    # تدقيق الموافقة
+    
+    # تحديث حالة الإصدار لـ approved
+    version = db.query(DocumentVersion).filter(
+        DocumentVersion.document_id == doc.id,
+        DocumentVersion.version_number == doc.version
+    ).first()
+    if version:
+        version.status = "approved"
+    
     audit_approve = DocumentAuditLog(document_id=doc.id, action="approve", performed_by=current_user.id)
     db.add(audit_approve)
     db.commit()
@@ -118,7 +143,7 @@ async def approve_document(
 async def ask_question(
     query: str,
     department_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     if not has_permission(db, current_user.id, "documents:read", department_id):
@@ -144,7 +169,7 @@ async def ask_question(
 @router.get("/")
 async def list_documents(
     department_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     if not has_permission(db, current_user.id, "documents:read", department_id):
@@ -156,7 +181,8 @@ async def list_documents(
 @router.get("/download/{document_id}")
 async def download_document(
     document_id: int, 
-    db: Session = Depends(get_db),
+    department_id: str,
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -173,7 +199,8 @@ async def download_document(
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: int, 
-    db: Session = Depends(get_db),
+    department_id: str,
+    db: Session = Depends(get_department_db),
     current_user: User = Depends(get_current_user)
 ):
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -184,7 +211,15 @@ async def delete_document(
         raise HTTPException(status_code=403, detail="Permission denied")
 
     doc.status = "archived"
-    # تدقيق الأرشفة
+    
+    # أرشفة الإصدار
+    version = db.query(DocumentVersion).filter(
+        DocumentVersion.document_id == doc.id,
+        DocumentVersion.version_number == doc.version
+    ).first()
+    if version:
+        version.status = "archived"
+    
     audit_archive = DocumentAuditLog(document_id=doc.id, action="archive", performed_by=current_user.id)
     db.add(audit_archive)
     db.commit()
