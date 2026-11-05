@@ -53,3 +53,5 @@ and isolation checks pass; the supplied contract intentionally has `ready: false
 Roles & Permissions APIs: [setup, policy matrix and verification](Backend/docs/role-permissions.md).
 
 Core endpoint access policy and test matrix: [Subtask 2.5](Backend/docs/core-access-contract.md).
+
+PostgreSQL physical isolation and least-privilege grant policy: [Subtask 3.2](Backend/docs/postgres-isolation.md).

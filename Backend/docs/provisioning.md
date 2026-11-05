@@ -4,8 +4,7 @@
 
 The API registers a request using `request_department_creation` and central RBAC.
 It does not import or run the provisioning worker. Caller identity must come from
-trusted authentication, not a request-body admin ID. Authentication is still a
-separate pending feature.
+trusted authentication, not a request-body admin ID. Authentication and Core RBAC are implemented; use their validated dependencies.
 
 | Identity | Allowed scope |
 |---|---|
@@ -14,7 +13,7 @@ separate pending feature.
 | Provisioner login | CREATEDB/CREATEROLE, no superuser; owns/administers only managed roles and can SET tenant owners |
 | API central login | Central application DML; no DDL, CREATEDB, CREATEROLE, superuser or bypass-RLS; registry UPDATE withheld |
 | Tenant owner | NOLOGIN; owns its one database and migrated objects |
-| Tenant runtime | CONNECT own database, schema USAGE, business-table DML and sequence use; metadata SELECT only; no ownership, membership, TEMP or DDL |
+| Tenant runtime | CONNECT own database, schema USAGE, explicit reviewed table/sequence policy; metadata SELECT only; no ownership, membership, TEMP or DDL |
 
 Runtime connection pools reject administrative credentials. Roles use immutable
 `dept_<32 hex>_owner` and `_app` identities derived from the registry, not mutable
@@ -49,10 +48,15 @@ The document developer must:
    and contracts that contain only provisioning/Alembic metadata even if ready is
    manually set to true. The infrastructure test may still call the foundation
    migrator directly, while keeping Legal failed.
-4. Agree table/sequence privileges. Current runtime grants are CRUD on public
-   business tables; immutable/audit tables may need narrower policies in their
-   migrations before adding them. Views, other schemas, required columns and
-   extensions such as pgvector require an explicit contract extension/review.
+4. Agree table/sequence privileges. Subtask 3.2 removes blanket CRUD/default
+   grants: business tables require an explicit reviewed policy through the Core
+   adapter interface. Tables omitted from that policy have no runtime rights;
+   metadata remains SELECT-only, and future objects get no automatic grants.
+   The worker does not yet receive a business privilege policy from the tenant
+   contract. A ready business schema therefore fails with runtime_grant_policy_missing
+   until that contract and its forwarding are jointly implemented/reviewed in 3.3.
+   No document-specific policy is inferred here. Views, other schemas, columns,
+   functions and extensions such as pgvector need a contract extension/review.
 
 `tenant-contract.example.json` is intentionally unavailable. The worker sets
 `failed / tenant_contract_unavailable` without provisioning when it is used.
@@ -171,3 +175,5 @@ or adopt unknown objects. A per-database role owner and marker must match exactl
 5. If credentials must rotate, change the database password and secret-store
    value coherently, drain/dispose old pools, and reverify. Never rotate existing
    HR/Finance application passwords as part of new department provisioning.
+
+See [Subtask 3.2 physical isolation and grant policy](postgres-isolation.md) for the tested boundaries and pending document contract.

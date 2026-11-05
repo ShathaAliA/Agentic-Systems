@@ -19,8 +19,8 @@ infrastructure, or `--suite integration` for isolated PostgreSQL only. Docker mo
 uses `--backend docker`, with `--docker` and `--image` overrides. The test image and
 postgres:17-alpine must already be available; no production deployment is involved.
 
-The orchestrator runs units then seven explicit PostgreSQL modules: authentication,
-departments, users, role_policies, usage, core_access, core_lifecycle. Each module
+The orchestrator runs units then eight explicit PostgreSQL modules: authentication,
+departments, users, role_policies, usage, core_access, core_lifecycle, database_isolation. Each module
 gets a different fresh cluster because its migration/fixture contract requires an
 empty database. Modules are deliberately not combined in one reused cluster.
 
