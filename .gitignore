@@ -27,7 +27,13 @@ storage/
 *.dump
 *.backup
 
-
+# أدوات التشخيص المؤقتة
 check_db.py
 enable_vector.py
+check_departments.py
+add_department.py
+add_user.py
+grant_admin.py
 central_migration.json
+
+create_tables.py

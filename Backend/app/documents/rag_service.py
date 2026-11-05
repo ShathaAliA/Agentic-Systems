@@ -41,15 +41,29 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
     model = get_embedding_model()
     query_vector = model.encode(query).tolist()
     
-    # البحث المفلتر: نربط بالجدول Document عشان نفلتر بالقسم
+    # البحث المفلتر: نربط بالجدول Document عشان نفلتر بالقسم، ونبحث بس في المعتمد
     stmt = select(DocumentChunk).join(Document).where(
-        Document.department_id == department_id
+        Document.department_id == department_id,
+        Document.status == "approved" # <-- نبحث بس في المعتمد
     ).order_by(
         DocumentChunk.embedding.cosine_distance(query_vector)
     ).limit(limit)
     
     results = db.execute(stmt).scalars().all()
-    return [r.content for r in results]
+    
+    # Fail Closed: إذا النتائج قليلة أو النص قصير، نرجع قائمة فاضية
+    filtered_results = []
+    for r in results:
+        if len(r.content.strip()) > 20:
+            doc = db.query(Document).filter(Document.id == r.document_id).first()
+            doc_name = doc.filename if doc else "Unknown"
+            filtered_results.append({
+                "content": r.content,
+                "document_name": doc_name,
+                "chunk_id": r.id
+            })
+    
+    return filtered_results
 
 def generate_answer(query: str, context: str) -> str:
     if not gemini_client:
@@ -66,7 +80,7 @@ def generate_answer(query: str, context: str) -> str:
 """
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-3.8-flash", # استخدمنا النموذج الأحدث
+            model="gemini-3.8-flash",
             contents=prompt
         )
         return response.text

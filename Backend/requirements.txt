@@ -31,3 +31,4 @@ sentence-transformers
 google-genai
 pgvector
 python-multipart
+PyMuPDF
