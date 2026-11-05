@@ -70,3 +70,8 @@ Core review and proposed merge scope: [review](Backend/docs/core-review.md),
 [actual verification](Backend/docs/core-review-verification.md) and
 [local PR draft](Backend/docs/core-pr-draft.md). The draft is not an open PR;
 document integration and container verification remain pending.
+
+Prepared Core CI and bounded container smoke checks:
+[setup](Backend/docs/core-ci.md) and [actual verification](Backend/docs/core-ci-verification.md).
+The workflow is not yet published or remotely executed; Docker engine recovery
+and real container verification remain pending.

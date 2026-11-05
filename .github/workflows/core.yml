@@ -1,0 +1,48 @@
+name: Core verification
+on:
+  pull_request:
+    branches: [Backend]
+  push:
+    branches: [feature/core-backend]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit-and-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r Backend/requirements-test.txt
+      - run: python -m pytest Backend/tests -m 'not integration' -q -p no:cacheprovider
+        env:
+          APP_ENV: test
+          AUTH_MODE: disabled
+          PYTHON_DOTENV_DISABLED: '1'
+      - run: docker build --target runtime -t ai-platform-core:dev Backend
+      - run: docker build --target test -t ai-platform-core:test Backend
+      - name: Check restricted runtime health
+        run: python Backend/tools/check-core-container.py
+  postgres-isolation:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r Backend/requirements-test.txt
+      - name: Run on fresh PostgreSQL clusters only
+        shell: pwsh
+        run: |
+          $postgresBin = Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory | Where-Object { $_.Name -match '^\d+$' -and [int]$_.Name -ge 17 } | Sort-Object { [int]$_.Name } -Descending | ForEach-Object { Join-Path $_.FullName 'bin' } | Where-Object { Test-Path (Join-Path $_ 'initdb.exe') } | Select-Object -First 1
+          if (-not $postgresBin) { throw 'Hosted runner lacks PostgreSQL binaries' }
+          python Backend/tools/run-core-tests.py --suite integration --backend native --postgres-bin $postgresBin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
