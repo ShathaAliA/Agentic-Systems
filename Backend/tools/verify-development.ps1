@@ -32,7 +32,7 @@ Check-Native
 $url='postgresql+psycopg://ai_user:'+([Uri]::EscapeDataString($password))+'@ai_platform_postgres:5432/ai_platform_db'
 [IO.File]::WriteAllText((Join-Path $repoPath '.local/dev-admin.json'),(@{url=$url}|ConvertTo-Json -Compress))
 Remove-Variable password,url,metadata
-& $dockerExe build -t ai-platform-day1:dev (Join-Path $repoPath 'Backend')
+& $dockerExe build --target test -t ai-platform-day1:dev (Join-Path $repoPath 'Backend')
 Check-Native
 & $dockerExe volume create ai_platform_day1_dev_state | Out-Null
 Check-Native

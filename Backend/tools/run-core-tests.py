@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--pwsh", default="pwsh")
     parser.add_argument("--postgres-bin", default=r"C:\Program Files\PostgreSQL\18\bin")
     parser.add_argument("--docker", default="docker")
-    parser.add_argument("--image", default="ai-platform-day2:dev")
+    parser.add_argument("--image", default="ai-platform-core:test")
     return run(parser.parse_args())
 
 
