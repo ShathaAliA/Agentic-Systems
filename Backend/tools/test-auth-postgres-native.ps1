@@ -2,7 +2,7 @@
 param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\18\bin',
     [string]$Python,
-    [ValidateSet('tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
+    [ValidateSet('tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
                  'tests/test_users_postgres.py', 'tests/test_departments_postgres.py', 'tests/test_usage_postgres.py')]
     [string]$TestFile = 'tests/test_role_policies_postgres.py'
 )
@@ -31,17 +31,17 @@ function Checked([string]$Name, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Native test command failed: $Name" }
 }
 $keys = @('PGPASSWORD', 'RUN_AUTH_POSTGRES_TESTS', 'AUTH_TEST_BACKUP_ACK',
-    'AUTH_TEST_ADMIN_URL_FILE', 'AUTH_TEST_NATIVE_POSTGRES', 'AUTH_TEST_REPORT_DIR', 'CENTRAL_MIGRATION_DATABASE_URL_FILE')
+    'RUN_DEVELOPMENT_PROVISIONING', 'DEV_BACKUP_ACK', 'AUTH_TEST_ADMIN_URL_FILE', 'AUTH_TEST_NATIVE_POSTGRES', 'AUTH_TEST_REPORT_DIR', 'CENTRAL_MIGRATION_DATABASE_URL_FILE')
 $previous = @{}
 foreach ($key in $keys) { $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
-$started = $false
+$startAttempted = $false
 Push-Location (Join-Path $repo 'Backend')
 try {
     Checked 'initdb.exe' @('-D', $data, '-U', 'auth_test_owner', '--pwfile', $passwordFile,
         '--auth-host=scram-sha-256', '--auth-local=scram-sha-256', '--encoding=UTF8')
+    $startAttempted = $true
     Checked 'pg_ctl.exe' @('-D', $data, '-l', (Join-Path $state 'postgres.log'),
         '-o', "-h 127.0.0.1 -p $port", '-w', 'start')
-    $started = $true
     $env:PGPASSWORD = $password
     $connection = @('-h', '127.0.0.1', '-p', "$port", '-U', 'auth_test_owner')
     Checked 'createdb.exe' ($connection + @('auth_test_db'))
@@ -51,16 +51,23 @@ try {
     $urlFile = Join-Path $state 'admin.json'
     @{url="postgresql+psycopg://auth_test_owner:${password}@127.0.0.1:${port}/auth_test_db"} |
         ConvertTo-Json | Set-Content -LiteralPath $urlFile
+    $env:RUN_DEVELOPMENT_PROVISIONING = $null
+    $env:DEV_BACKUP_ACK = $null
     $env:RUN_AUTH_POSTGRES_TESTS = '1'
     $env:AUTH_TEST_BACKUP_ACK = '1'
     $env:AUTH_TEST_NATIVE_POSTGRES = '1'
     $env:AUTH_TEST_REPORT_DIR = $state
     $env:AUTH_TEST_ADMIN_URL_FILE = $urlFile
-    & $Python -m pytest -q $TestFile --tb=short -p no:cacheprovider
+    & $Python -m pytest -q $TestFile --isolated-postgres --junitxml (Join-Path $state 'results.xml') --tb=short -p no:cacheprovider
     if ($LASTEXITCODE -ne 0) { throw 'Native PostgreSQL tests failed' }
 } finally {
-    if ($started) { & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data -w stop }
+    $stopFailed = $false
+    if ($startAttempted) {
+        & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data -w stop
+        $stopFailed = $LASTEXITCODE -ne 0
+    }
     foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process') }
     Pop-Location
     Write-Host "Retained isolated cluster and private recovery artifacts: $state"
+    if ($stopFailed) { throw 'Could not confirm isolated PostgreSQL shutdown; retained recovery directory above' }
 }
