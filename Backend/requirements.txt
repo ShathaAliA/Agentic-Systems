@@ -32,3 +32,8 @@ google-genai
 pgvector
 python-multipart
 PyMuPDF
+
+openai
+arabic-reshaper
+python-bidi
+

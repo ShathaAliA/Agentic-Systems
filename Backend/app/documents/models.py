@@ -22,3 +22,12 @@ class DocumentChunk(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Vector(768))
+
+class DocumentAuditLog(Base):
+    __tablename__ = "document_audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    action = Column(String(50), nullable=False) # upload, approve, archive
+    performed_by = Column(String(36), nullable=False) # user_id
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())

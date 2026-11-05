@@ -13,6 +13,7 @@ def get_embedding_model():
         _embedding_model = SentenceTransformer("Omartificial-Intelligence-Space/Arabic-Triplet-Matryoshka-V2")
     return _embedding_model
 
+# إعداد Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -41,17 +42,15 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
     model = get_embedding_model()
     query_vector = model.encode(query).tolist()
     
-    # البحث المفلتر: نربط بالجدول Document عشان نفلتر بالقسم، ونبحث بس في المعتمد
     stmt = select(DocumentChunk).join(Document).where(
         Document.department_id == department_id,
-        Document.status == "approved" # <-- نبحث بس في المعتمد
+        Document.status == "approved"
     ).order_by(
         DocumentChunk.embedding.cosine_distance(query_vector)
     ).limit(limit)
     
     results = db.execute(stmt).scalars().all()
     
-    # Fail Closed: إذا النتائج قليلة أو النص قصير، نرجع قائمة فاضية
     filtered_results = []
     for r in results:
         if len(r.content.strip()) > 20:
@@ -71,6 +70,7 @@ def generate_answer(query: str, context: str) -> str:
         
     prompt = f"""أنت مساعد ذكي لشركة وادي مكة. أجب على السؤال بناءً على السياق المرفق فقط.
 إذا لم تجد الإجابة في السياق، قل "لا أعرف" ولا تحاول التخمين.
+إذا وجدت تعارضاً بين المصادر، اذكر التعارض بوضوح ولا تفضل أحدها.
 
 السياق:
 {context}

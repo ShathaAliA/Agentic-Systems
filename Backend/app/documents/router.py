@@ -6,19 +6,18 @@ import os
 import uuid
 
 from app.database import get_db
-from app.documents.models import Document
+from app.documents.models import Document, DocumentAuditLog # <-- ضفنا AuditLog
 from app.documents.ocr_service import extract_text_from_file
 from app.documents import rag_service
 from app.auth.dependencies import get_current_user
 from app.models import User
-from app.services.authorization import has_permission  # <-- شلنا التعليق
+from app.services.authorization import has_permission
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 1. رفع المستند (مع الإصدارات)
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -26,7 +25,6 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:upload", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -44,7 +42,6 @@ async def upload_document(
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="نوع الملف غير مدعوم")
     
-    # إدارة الإصدارات
     existing_doc = db.query(Document).filter(
         Document.filename == file.filename,
         Document.department_id == department_id
@@ -52,6 +49,9 @@ async def upload_document(
     
     if existing_doc:
         existing_doc.status = "archived"
+        # تدقيق الأرشفة
+        audit_archive = DocumentAuditLog(document_id=existing_doc.id, action="archive", performed_by=current_user.id)
+        db.add(audit_archive)
         db.commit()
     
     safe_filename = f"{uuid.uuid4()}{file_ext}"
@@ -75,6 +75,11 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
     
+    # تدقيق الرفع
+    audit_upload = DocumentAuditLog(document_id=new_doc.id, action="upload", performed_by=current_user.id)
+    db.add(audit_upload)
+    db.commit()
+    
     chunks = rag_service.chunk_text(extracted_text)
     if chunks:
         rag_service.process_and_store_chunks(db, new_doc.id, chunks)
@@ -83,10 +88,11 @@ async def upload_document(
         "status": "success",
         "document_id": new_doc.id,
         "chunks_count": len(chunks),
-        "message": "تم الرفع، الاستخراج، التقسيم، والتضمين بنجاح (بانتظار الموافقة)."
+        "doc_version": new_doc.version,
+        "doc_status": new_doc.status,
+        "message": "تم الرفع (بانتظار الموافقة)."
     }
 
-# 2. الموافقة على المستند
 @router.post("/{document_id}/approve")
 async def approve_document(
     document_id: int,
@@ -97,15 +103,17 @@ async def approve_document(
     if not doc:
         raise HTTPException(status_code=404, detail="المستند غير موجود")
     
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:update", doc.department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
     
     doc.status = "approved"
+    # تدقيق الموافقة
+    audit_approve = DocumentAuditLog(document_id=doc.id, action="approve", performed_by=current_user.id)
+    db.add(audit_approve)
     db.commit()
+    
     return {"status": "success", "message": "تم اعتماد المستند ونشره في البحث."}
 
-# 3. سؤال (RAG)
 @router.post("/ask")
 async def ask_question(
     query: str,
@@ -113,7 +121,6 @@ async def ask_question(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -134,21 +141,18 @@ async def ask_question(
         ]
     }
 
-# 4. قائمة المستندات
 @router.get("/")
 async def list_documents(
     department_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
     
     documents = db.query(Document).filter(Document.department_id == department_id).all()
     return {"count": len(documents), "documents": documents}
 
-# 5. تحميل مستند
 @router.get("/download/{document_id}")
 async def download_document(
     document_id: int, 
@@ -159,7 +163,6 @@ async def download_document(
     if not doc:
         raise HTTPException(status_code=404, detail="المستند غير موجود")
     
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:read", doc.department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -167,7 +170,6 @@ async def download_document(
         raise HTTPException(status_code=404, detail="الملف غير موجود")
     return FileResponse(path=doc.file_path, filename=doc.filename)
 
-# 6. حذف مستند (أرشفة)
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: int, 
@@ -178,10 +180,13 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="المستند غير موجود")
     
-    # تفعيل الصلاحية
     if not has_permission(db, current_user.id, "documents:delete", doc.department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     doc.status = "archived"
+    # تدقيق الأرشفة
+    audit_archive = DocumentAuditLog(document_id=doc.id, action="archive", performed_by=current_user.id)
+    db.add(audit_archive)
     db.commit()
+    
     return {"status": "success", "message": "تم أرشفة المستند."}
