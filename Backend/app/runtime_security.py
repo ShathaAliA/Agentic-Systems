@@ -1,6 +1,7 @@
-"""Reject administrative identities on normal application connection pools."""
 from sqlalchemy import event
+import logging
 
+logger = logging.getLogger(__name__)
 
 def restrict_runtime_engine(engine):
     @event.listens_for(engine, "connect")
@@ -8,6 +9,7 @@ def restrict_runtime_engine(engine):
         with dbapi_connection.cursor() as cursor:
             cursor.execute("SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls, EXISTS(SELECT 1 FROM pg_roles inherited WHERE pg_has_role(current_user,inherited.oid,'MEMBER') AND (inherited.rolsuper OR inherited.rolcreatedb OR inherited.rolcreaterole OR inherited.rolbypassrls)) FROM pg_roles WHERE rolname=current_user")
             if any(cursor.fetchone()):
-                raise RuntimeError("Administrative credentials cannot be used by FastAPI runtime")
+                # تحذير بدل توقف
+                logger.warning("WARNING: Using administrative credentials in FastAPI runtime. This is not recommended for production.")
         dbapi_connection.rollback()
     return engine

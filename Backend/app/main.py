@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+import traceback
 
 from app.auth.config import AuthSettings
 from app.auth.routes import router as auth_router
@@ -16,11 +17,9 @@ def create_app(*, central_engine=None, auth_settings=None):
         description="Backend API for the AI Platform",
         version="0.1.0",
     )
-    # Explicit engine injection is for tests; runtime obtains the guarded engine.
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
     
-    # Include all routers (Auth, Departments, and Documents)
     app.include_router(auth_router)
     app.include_router(departments_router)
     app.include_router(documents_router)
@@ -35,12 +34,13 @@ def create_app(*, central_engine=None, auth_settings=None):
 
     @app.exception_handler(RequestValidationError)
     async def safe_validation_error(request, exc):
-        # Default validation errors can echo passwords and forged token data.
         return JSONResponse(status_code=422, content={"detail": "Invalid request data"})
 
     @app.exception_handler(SQLAlchemyError)
     async def database_error(request, exc):
-        # Never return SQL parameters, DSNs, password hashes or driver exceptions.
+        # نطبع الخطأ في الـ Terminal عشان نعرف السبب
+        print(f"\n DATABASE ERROR: {exc} \n")
+        traceback.print_exc()
         return JSONResponse(status_code=503, content={"detail": "Database is unavailable"})
 
     @app.get("/")

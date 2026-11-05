@@ -9,15 +9,12 @@ from app.credentials import configured_url
 from app.runtime_security import restrict_runtime_engine
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 load_dotenv(BASE_DIR / ".env")
 
 DATABASE_URL = configured_url("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL not found in backend/.env"
-    )
+    raise RuntimeError("DATABASE_URL not found in backend/.env")
 
 engine = restrict_runtime_engine(create_engine(
     DATABASE_URL,
@@ -25,12 +22,10 @@ engine = restrict_runtime_engine(create_engine(
     hide_parameters=True,
 ))
 
-
 def check_database_connection():
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
     return True
-
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -40,3 +35,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# --- استيراد الموديلز عشان Alembic يتعرف عليها ---
+# (نحطها في النهاية عشان نتجنب Circular Import)
+from app.models import Base, User, Department, DepartmentMembership, Role, Permission, RolePermission, RoleAssignment, DepartmentDatabase
+from app.documents.models import Document, DocumentChunk

@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api/documents", tags=["Documents"])
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 1. رفع المستند
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -29,10 +28,8 @@ async def upload_document(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # استخراج النص
     extracted_text = extract_text_from_file(file_path, file_ext)
         
-    # حفظ المستند في قاعدة البيانات
     new_doc = Document(
         filename=file.filename,
         file_path=file_path,
@@ -43,7 +40,6 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
     
-    # التقسيم والتضمين (RAG Pipeline)
     chunks = rag_service.chunk_text(extracted_text)
     if chunks:
         rag_service.process_and_store_chunks(db, new_doc.id, chunks)
@@ -55,32 +51,26 @@ async def upload_document(
         "message": "تم الرفع، الاستخراج، التقسيم، والتضمين بنجاح."
     }
 
-# 2. سؤال (RAG)
 @router.post("/ask")
 async def ask_question(query: str, db: Session = Depends(get_db)):
-    # 1. البحث عن السياق
     context_chunks = rag_service.retrieve_relevant_chunks(db, query)
     if not context_chunks:
         return {"answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات."}
     
     context = "\n\n".join(context_chunks)
-    
-    # 2. توليد الإجابة
     answer = rag_service.generate_answer(query, context)
     
     return {
         "query": query,
         "answer": answer,
-        "context_used": context_chunks # ترجع المقاطع عشان نتأكد
+        "context_used": context_chunks
     }
 
-# 3. قائمة المستندات
 @router.get("/")
 async def list_documents(db: Session = Depends(get_db)):
     documents = db.query(Document).all()
     return {"count": len(documents), "documents": documents}
 
-# 4. تحميل مستند
 @router.get("/download/{document_id}")
 async def download_document(document_id: int, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == document_id).first()
@@ -88,7 +78,6 @@ async def download_document(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="الملف غير موجود")
     return FileResponse(path=doc.file_path, filename=doc.filename)
 
-# 5. حذف مستند
 @router.delete("/{document_id}")
 async def delete_document(document_id: int, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == document_id).first()

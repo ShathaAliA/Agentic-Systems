@@ -23,3 +23,11 @@ watchfiles==1.3.0
 websockets==17.3
 alembic>=1.13,<2
 argon2-cffi==25.1.0
+
+markitdown[all]
+pdfplumber
+pytesseract
+sentence-transformers
+google-genai
+pgvector
+python-multipart
