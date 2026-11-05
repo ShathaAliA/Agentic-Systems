@@ -11,8 +11,8 @@ class Document(Base):
     file_type = Column(String, nullable=True)
     extracted_text = Column(Text, nullable=True)
     department_id = Column(String(50), nullable=True)
-    status = Column(String(20), default="pending_review") # pending_review, approved, archived
-    version = Column(Integer, default=1) # رقم الإصدار
+    status = Column(String(20), default="pending_review")
+    version = Column(Integer, default=1)
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
 
 class DocumentChunk(Base):
@@ -28,8 +28,8 @@ class DocumentAuditLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
-    action = Column(String(50), nullable=False) # upload, approve, archive
-    performed_by = Column(String(36), nullable=False) # user_id
+    action = Column(String(50), nullable=False) # upload, approve, archive, revise
+    performed_by = Column(String(36), nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
 class DocumentVersion(Base):
@@ -40,3 +40,13 @@ class DocumentVersion(Base):
     version_number = Column(Integer, nullable=False)
     status = Column(String(20), nullable=False) # approved, archived, pending
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class DocumentRevisionLog(Base):
+    __tablename__ = "document_revision_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    old_text = Column(Text, nullable=True)
+    new_text = Column(Text, nullable=False)
+    revised_by = Column(String(36), nullable=False)
+    revised_at = Column(DateTime(timezone=True), server_default=func.now())

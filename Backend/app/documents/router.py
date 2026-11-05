@@ -6,8 +6,8 @@ import os
 import uuid
 
 from app.database import get_department_db
-from app.documents.models import Document, DocumentAuditLog, DocumentVersion # <-- ضفنا DocumentVersion
-from app.documents.ocr_service import extract_text_from_file
+from app.documents.models import Document, DocumentAuditLog, DocumentVersion, DocumentRevisionLog
+from app.documents.file_processor import process_file
 from app.documents import rag_service
 from app.auth.dependencies import get_current_user
 from app.models import User
@@ -36,12 +36,28 @@ async def upload_document(
     if file_size > MAX_SIZE:
         raise HTTPException(status_code=400, detail="حجم الملف يتجاوز 20 ميجابايت")
 
-    allowed_extensions = [".pdf", ".docx", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg"]
     file_ext = os.path.splitext(file.filename)[1].lower()
+    temp_filename = f"temp_{uuid.uuid4()}{file_ext}"
+    temp_path = os.path.join(UPLOAD_DIR, temp_filename)
     
-    if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="نوع الملف غير مدعوم")
-    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        result = process_file(temp_path)
+    except Exception as e:
+        os.remove(temp_path)
+        raise HTTPException(status_code=400, detail=f"File processing error: {str(e)}")
+
+    if result["status"] != "accepted":
+        os.remove(temp_path)
+        reason = result.get("reason", "unknown")
+        raise HTTPException(status_code=400, detail=f"File rejected: {reason}")
+
+    safe_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    shutil.move(temp_path, file_path)
+
     existing_doc = db.query(Document).filter(
         Document.filename == file.filename,
         Document.department_id == department_id
@@ -52,7 +68,6 @@ async def upload_document(
         audit_archive = DocumentAuditLog(document_id=existing_doc.id, action="archive", performed_by=current_user.id)
         db.add(audit_archive)
         
-        # أرشفة الإصدار القديم
         existing_version = db.query(DocumentVersion).filter(
             DocumentVersion.document_id == existing_doc.id,
             DocumentVersion.status == "approved"
@@ -62,13 +77,7 @@ async def upload_document(
         
         db.commit()
     
-    safe_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    extracted_text = extract_text_from_file(file_path, file_ext)
+    extracted_text = result["extraction"].get("original_text", "")
         
     new_doc = Document(
         filename=file.filename,
@@ -83,7 +92,6 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
     
-    # تسجيل الإصدار الجديد
     new_version = DocumentVersion(
         document_id=new_doc.id,
         version_number=new_doc.version,
@@ -125,7 +133,6 @@ async def approve_document(
     
     doc.status = "approved"
     
-    # تحديث حالة الإصدار لـ approved
     version = db.query(DocumentVersion).filter(
         DocumentVersion.document_id == doc.id,
         DocumentVersion.version_number == doc.version
@@ -138,6 +145,34 @@ async def approve_document(
     db.commit()
     
     return {"status": "success", "message": "تم اعتماد المستند ونشره في البحث."}
+
+@router.post("/{document_id}/revise")
+async def revise_document(
+    document_id: int,
+    new_text: str,
+    department_id: str,
+    db: Session = Depends(get_department_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="المستند غير موجود")
+    
+    if not has_permission(db, current_user.id, "documents:update", doc.department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    revision = DocumentRevisionLog(
+        document_id=doc.id,
+        old_text=doc.extracted_text,
+        new_text=new_text,
+        revised_by=current_user.id
+    )
+    db.add(revision)
+    
+    doc.extracted_text = new_text
+    db.commit()
+    
+    return {"status": "success", "message": "تم تصحيح النص وتسجيله."}
 
 @router.post("/ask")
 async def ask_question(
@@ -161,7 +196,7 @@ async def ask_question(
         "query": query,
         "answer": answer,
         "sources": [
-            {"document": c["document_name"], "chunk_id": c["chunk_id"]}
+            {"document": c["document_name"], "chunk_id": c["chunk_id"], "version": c.get("version")}
             for c in context_chunks
         ]
     }
@@ -212,7 +247,6 @@ async def delete_document(
 
     doc.status = "archived"
     
-    # أرشفة الإصدار
     version = db.query(DocumentVersion).filter(
         DocumentVersion.document_id == doc.id,
         DocumentVersion.version_number == doc.version

@@ -13,7 +13,6 @@ def get_embedding_model():
         _embedding_model = SentenceTransformer("Omartificial-Intelligence-Space/Arabic-Triplet-Matryoshka-V2")
     return _embedding_model
 
-# إعداد Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -55,12 +54,14 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
     for r in results:
         if len(r.content.strip()) > 20:
             doc = db.query(Document).filter(Document.id == r.document_id).first()
-            doc_name = doc.filename if doc else "Unknown"
-            filtered_results.append({
-                "content": r.content,
-                "document_name": doc_name,
-                "chunk_id": r.id
-            })
+            if doc:
+                filtered_results.append({
+                    "content": r.content,
+                    "document_name": doc.filename,
+                    "chunk_id": r.id,
+                    "version": doc.version, # <-- أضفنا الإصدار
+                    "page_number": None # الموضع (اختياري، يمكن إضافته لاحقاً)
+                })
     
     return filtered_results
 
