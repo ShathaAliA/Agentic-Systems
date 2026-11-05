@@ -1,12 +1,17 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import shutil
 import os
+import uuid
+
 from app.database import get_db
 from app.documents.models import Document
 from app.documents.ocr_service import extract_text_from_file
 from app.documents import rag_service
+from app.auth.dependencies import get_current_user
+from app.models import User
+from app.services.authorization import has_permission
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -16,15 +21,32 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    department_id: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    # التحقق من الصلاحية
+    if not has_permission(db, current_user.id, "documents:upload", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    # أمان الملف
+    MAX_SIZE = 20 * 1024 * 1024
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    
+    if file_size > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="حجم الملف يتجاوز 20 ميجابايت")
+
     allowed_extensions = [".pdf", ".docx", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg"]
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="نوع الملف غير مدعوم")
     
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    safe_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
@@ -34,7 +56,8 @@ async def upload_document(
         filename=file.filename,
         file_path=file_path,
         file_type=file_ext,
-        extracted_text=extracted_text
+        extracted_text=extracted_text,
+        department_id=department_id
     )
     db.add(new_doc)
     db.commit()
@@ -52,8 +75,17 @@ async def upload_document(
     }
 
 @router.post("/ask")
-async def ask_question(query: str, db: Session = Depends(get_db)):
-    context_chunks = rag_service.retrieve_relevant_chunks(db, query)
+async def ask_question(
+    query: str,
+    department_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not has_permission(db, current_user.id, "documents:read", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+    
     if not context_chunks:
         return {"answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات."}
     
@@ -67,22 +99,47 @@ async def ask_question(query: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/")
-async def list_documents(db: Session = Depends(get_db)):
-    documents = db.query(Document).all()
+async def list_documents(
+    department_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not has_permission(db, current_user.id, "documents:read", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    
+    documents = db.query(Document).filter(Document.department_id == department_id).all()
     return {"count": len(documents), "documents": documents}
 
 @router.get("/download/{document_id}")
-async def download_document(document_id: int, db: Session = Depends(get_db)):
+async def download_document(
+    document_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     doc = db.query(Document).filter(Document.id == document_id).first()
-    if not doc or not os.path.exists(doc.file_path):
+    if not doc:
+        raise HTTPException(status_code=404, detail="المستند غير موجود")
+    
+    if not has_permission(db, current_user.id, "documents:read", doc.department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="الملف غير موجود")
     return FileResponse(path=doc.file_path, filename=doc.filename)
 
 @router.delete("/{document_id}")
-async def delete_document(document_id: int, db: Session = Depends(get_db)):
+async def delete_document(
+    document_id: int, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="المستند غير موجود")
+    
+    if not has_permission(db, current_user.id, "documents:delete", doc.department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
     if os.path.exists(doc.file_path):
         os.remove(doc.file_path)
     db.delete(doc)
