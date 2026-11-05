@@ -35,7 +35,8 @@ python Backend/tools/run-core-tests.py --suite all --backend native
 
 Native mode uses Windows/PowerShell 7.2+ and installed PostgreSQL 18 by default;
 `--postgres-bin` overrides its binaries. Docker mode is available with
-`--backend docker` and an existing `ai-platform-day2:dev` test image. See the
+`--backend docker` and an existing `ai-platform-core:test` image built with
+`docker build --target test -t ai-platform-core:test Backend`. See the
 [Subtask 3.1 testing guide](Backend/docs/core-testing.md) for unit-only mode,
 per-group operation, private/redacted reports and actual verification limits.
 
@@ -61,3 +62,6 @@ The operator-owned `Backend/tenant-contract.example.json` remains unready. Its V
 schema is in `Backend/contracts/tenant-v1.schema.json`; supply an agreed pinned
 business migration and reviewed explicit privileges before requesting activation.
 The API DTOs under `Backend/contracts/` are proposals, not live document endpoints.
+
+Container setup, private environment files, runtime/test image targets and offline
+operator boundaries: [Core local container guide](Backend/docs/core-containers.md).
