@@ -10,7 +10,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle")
+GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation")
 
 
 def clean_environment(source):
