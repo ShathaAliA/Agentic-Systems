@@ -2,7 +2,7 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-day2:dev",
-    [ValidateSet("tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
+    [ValidateSet("tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
