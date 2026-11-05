@@ -39,6 +39,6 @@ Check-Native
 & $dockerExe run --rm --user 0 --network none --mount type=volume,source=ai_platform_day1_dev_state,target=/state ai-platform-day1:dev chown 10001:10001 /state
 Check-Native
 $network=(& $dockerExe inspect $Container --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}').Trim().Split(' ')[0]
-& $dockerExe run --rm --name day1-development-check --network $network --mount "type=bind,source=$repoPath/Backend,target=/backend,readonly" --mount "type=bind,source=$repoPath/.local/dev-admin.json,target=/run/dev-admin.json,readonly" --mount type=volume,source=ai_platform_day1_dev_state,target=/state -e RUN_DEVELOPMENT_PROVISIONING=1 -e DEV_BACKUP_ACK=1 -e DEV_ADMIN_URL_FILE=/run/dev-admin.json -e DEV_STATE_DIR=/state/day1 ai-platform-day1:dev python -m pytest -q -s -m integration --tb=short -o cache_dir=/tmp/pytest_cache
+& $dockerExe run --rm --name day1-development-check --network $network --mount "type=bind,source=$repoPath/Backend,target=/backend,readonly" --mount "type=bind,source=$repoPath/.local/dev-admin.json,target=/run/dev-admin.json,readonly" --mount type=volume,source=ai_platform_day1_dev_state,target=/state -e RUN_DEVELOPMENT_PROVISIONING=1 -e DEV_BACKUP_ACK=1 -e DEV_ADMIN_URL_FILE=/run/dev-admin.json -e DEV_STATE_DIR=/state/day1 ai-platform-day1:dev python -m pytest -q -s tests/test_development_provisioning.py --allow-live-provisioning --tb=short -p no:cacheprovider
 Check-Native
 Write-Output "Development verification passed; backups at $backupPath. No databases deleted."

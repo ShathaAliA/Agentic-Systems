@@ -12,6 +12,33 @@ def identities(database, credential_key):
     return database + "_owner", database + "_app"
 
 
+FOUNDATION = frozenset({"alembic_version", "_provisioning_identity"})
+TABLE_OPERATIONS = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+SEQUENCE_OPERATIONS = ("USAGE", "SELECT", "UPDATE")
+
+
+def permission_policy(tables, sequences, table_privileges, sequence_privileges):
+    """Internal reviewed policy interface; never inferred from document models."""
+    if table_privileges is None:
+        if tables - FOUNDATION:
+            raise ProvisioningError("runtime_grant_policy_missing")
+        table_privileges = {}
+    def checked(policy, existing, allowed):
+        if not isinstance(policy, dict):
+            raise ProvisioningError("runtime_grant_policy_invalid")
+        result = {}
+        for name, operations in policy.items():
+            if (not isinstance(name, str) or not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", name)
+                    or name not in existing or not isinstance(operations, (tuple, list, set, frozenset))
+                    or any(not isinstance(op, str) or op not in allowed for op in operations)
+                    or len(set(operations)) != len(operations)):
+                raise ProvisioningError("runtime_grant_policy_invalid")
+            result[name] = frozenset(operations)
+        return result
+    return (checked(table_privileges, tables - FOUNDATION, {"SELECT", "INSERT", "UPDATE", "DELETE"}),
+            checked(sequence_privileges if sequence_privileges is not None else {}, sequences, {"USAGE", "SELECT"}))
+
+
 class PostgresProvisioner:
     def __init__(self, admin_url):
         self.url = make_url(admin_url)
@@ -63,20 +90,81 @@ class PostgresProvisioner:
     def migration_url(self, database):
         return self.url.set(drivername="postgresql+psycopg", database=database)
 
-    def grant_runtime(self, database, owner, credentials):
+    def _policy(self, conn, table_privileges, sequence_privileges):
+        tables = {r[0] for r in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'").fetchall()}
+        sequences = {r[0] for r in conn.execute("SELECT sequencename FROM pg_sequences WHERE schemaname='public'").fetchall()}
+        table_policy, sequence_policy = permission_policy(tables, sequences, table_privileges, sequence_privileges)
+        return tables, sequences, table_policy, sequence_policy
+
+    def _verify_object_acl(self, conn, kind, name, runtime, allowed):
+        # Include future PostgreSQL privilege types and GRANT OPTION, rather
+        # than relying solely on the known has_*_privilege operation lists.
+        excessive = conn.execute("""
+            SELECT EXISTS(SELECT 1 FROM pg_class object
+                CROSS JOIN LATERAL (
+                    SELECT entry.* FROM aclexplode(COALESCE(object.relacl,
+                        acldefault(%s::"char",object.relowner))) entry
+                    UNION ALL
+                    SELECT entry.* FROM pg_attribute attribute
+                        CROSS JOIN LATERAL aclexplode(attribute.attacl) entry
+                        WHERE attribute.attrelid=object.oid
+                ) acl
+                WHERE object.oid=to_regclass(%s)
+                AND acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=%s))
+                AND (acl.is_grantable OR NOT (acl.privilege_type=ANY(%s))))
+        """, (kind, "public." + name, runtime, list(allowed))).fetchone()[0]
+        if excessive:
+            raise ProvisioningError("runtime_permission_mismatch")
+
+    def _verify_policy(self, conn, owner, runtime, policy):
+        tables, sequences, table_policy, sequence_policy = policy
+        for table in tables:
+            allowed = {"SELECT"} if table in FOUNDATION else table_policy.get(table, frozenset())
+            self._verify_object_acl(conn, "r", table, runtime, allowed)
+            for operation in TABLE_OPERATIONS:
+                actual = conn.execute("SELECT has_table_privilege(%s,%s,%s)", (runtime, "public." + table, operation)).fetchone()[0]
+                if actual != (operation in allowed):
+                    raise ProvisioningError("runtime_permission_mismatch")
+                if operation in {"SELECT", "INSERT", "UPDATE", "REFERENCES"} and operation not in allowed:
+                    if conn.execute("SELECT has_any_column_privilege(%s,%s,%s)", (runtime, "public." + table, operation)).fetchone()[0]:
+                        raise ProvisioningError("runtime_permission_mismatch")
+        for sequence in sequences:
+            self._verify_object_acl(conn, "S", sequence, runtime, sequence_policy.get(sequence, frozenset()))
+            for operation in SEQUENCE_OPERATIONS:
+                actual = conn.execute("SELECT has_sequence_privilege(%s,%s,%s)", (runtime, "public." + sequence, operation)).fetchone()[0]
+                if actual != (operation in sequence_policy.get(sequence, frozenset())):
+                    raise ProvisioningError("runtime_permission_mismatch")
+        if conn.execute("SELECT EXISTS(SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a WHERE d.defaclrole=(SELECT oid FROM pg_roles WHERE rolname=%s) AND d.defaclnamespace IN (0,(SELECT oid FROM pg_namespace WHERE nspname='public')) AND d.defaclobjtype IN ('r','S') AND a.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=%s)))", (owner, runtime)).fetchone()[0]:
+            raise ProvisioningError("runtime_default_privileges")
+
+    def grant_runtime(self, database, owner, credentials, *, table_privileges=None, sequence_privileges=None):
+        expected_owner, expected_runtime = identities(database, database.upper())
+        if owner != expected_owner or credentials.username != expected_runtime:
+            raise ProvisioningError("unmanaged_database_identity")
         with self.connect(database) as conn, conn.transaction():
             conn.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(owner)))
+            policy = self._policy(conn, table_privileges, sequence_privileges)
+            tables, sequences, table_policy, sequence_policy = policy
             conn.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
             conn.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(credentials.username)))
-            rows = conn.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'").fetchall()
-            for (table,) in rows:
-                grant = "SELECT" if table in {"alembic_version", "_provisioning_identity"} else "SELECT, INSERT, UPDATE, DELETE"
-                conn.execute(sql.SQL("GRANT {} ON TABLE public.{} TO {}").format(sql.SQL(grant), sql.Identifier(table), sql.Identifier(credentials.username)))
-            conn.execute(sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {}").format(sql.Identifier(credentials.username)))
-            conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(sql.Identifier(credentials.username)))
-            conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {}").format(sql.Identifier(credentials.username)))
+            # Reconcile only this managed application's grants; never revoke
+            # another identity's legitimate rights or silently repair PUBLIC leaks.
+            for kind in ("TABLES", "SEQUENCES"):
+                conn.execute(sql.SQL("REVOKE ALL ON ALL {} IN SCHEMA public FROM {}").format(sql.SQL(kind), sql.Identifier(credentials.username)))
+                conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON {} FROM {}").format(sql.SQL(kind), sql.Identifier(credentials.username)))
+            for table in sorted(tables):
+                operations = {"SELECT"} if table in FOUNDATION else table_policy.get(table, frozenset())
+                if operations:
+                    conn.execute(sql.SQL("GRANT {} ON TABLE public.{} TO {}").format(sql.SQL(", ".join(sorted(operations))), sql.Identifier(table), sql.Identifier(credentials.username)))
+            for sequence, operations in sequence_policy.items():
+                if operations:
+                    conn.execute(sql.SQL("GRANT {} ON SEQUENCE public.{} TO {}").format(sql.SQL(", ".join(sorted(operations))), sql.Identifier(sequence), sql.Identifier(credentials.username)))
+            self._verify_policy(conn, owner, credentials.username, policy)
 
-    def verify(self, database, owner, credentials, department_id, revision, required_tables):
+    def verify(self, database, owner, credentials, department_id, revision, required_tables, *, table_privileges=None, sequence_privileges=None):
+        expected_owner, expected_runtime = identities(database, database.upper())
+        if owner != expected_owner or credentials.username != expected_runtime:
+            raise ProvisioningError("unmanaged_database_identity")
         with self.connect(database, credentials) as conn:
             identity = conn.execute("SELECT current_database(),current_user").fetchone()
             if identity != (database, credentials.username):
@@ -101,6 +189,7 @@ class PostgresProvisioner:
             for table in required_tables:
                 if not conn.execute("SELECT has_table_privilege(current_user,%s,'SELECT')", ("public." + table,)).fetchone()[0]:
                     raise ProvisioningError("required_table_permission_missing")
+            self._verify_policy(conn, owner, credentials.username, self._policy(conn, table_privileges, sequence_privileges))
             # Negative checks execute in rolled-back transactions. Do not just
             # trust the absence of role flags.
             for statement in ["CREATE SCHEMA _provisioning_denied", "CREATE TABLE public._provisioning_denied(id int)", "CREATE TEMP TABLE _provisioning_denied(id int)", "UPDATE public._provisioning_identity SET department_id=department_id"]:

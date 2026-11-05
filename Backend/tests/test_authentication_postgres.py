@@ -32,7 +32,12 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def isolated_postgres():
     admin_url = make_url(json.loads(Path(os.environ["AUTH_TEST_ADMIN_URL_FILE"]).read_text())["url"])
-    assert admin_url.host.startswith("ai-auth-test-")
+    native = os.getenv("AUTH_TEST_NATIVE_POSTGRES") == "1"
+    if native:
+        assert admin_url.host == "127.0.0.1" and admin_url.port != 5435
+        assert os.getenv("AUTH_TEST_REPORT_DIR")
+    else:
+        assert admin_url.host.startswith("ai-auth-test-")
     assert admin_url.database == "auth_test_db"
     assert os.getenv("AUTH_TEST_BACKUP_ACK") == "1"
     admin = create_engine(admin_url, hide_parameters=True)
@@ -41,7 +46,8 @@ def isolated_postgres():
         # An empty, newly created test cluster is mandatory. Never reuse company data.
         assert c.scalar(text("SELECT count(*) FROM pg_tables WHERE schemaname='public'")) == 0
         owners = c.execute(text("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database ORDER BY datname")).all()
-        Path("/reports/owners-acls-before.json").write_text(json.dumps([list(r) for r in owners], indent=2))
+        report_dir = Path(os.getenv("AUTH_TEST_REPORT_DIR", "/reports"))
+        (report_dir / "owners-acls-before.json").write_text(json.dumps([list(r) for r in owners], indent=2))
     os.environ["CENTRAL_MIGRATION_DATABASE_URL_FILE"] = os.environ["AUTH_TEST_ADMIN_URL_FILE"]
     cfg = Config("alembic.ini")
     command.upgrade(cfg, "p002")

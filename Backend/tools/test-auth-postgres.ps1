@@ -2,7 +2,7 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-day2:dev",
-    [ValidateSet("tests/test_authentication_postgres.py", "tests/test_departments_postgres.py")]
+    [ValidateSet("tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
@@ -49,7 +49,9 @@ try {
         "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
-        & $Docker exec $container pg_isready -U auth_test_owner -d auth_test_db *> $null
+        # The image's temporary initialization server accepts Unix sockets before
+        # restarting. TCP is available only on the final server used by tests.
+        & $Docker exec $container pg_isready -h 127.0.0.1 -U auth_test_owner -d auth_test_db *> $null
         if ($LASTEXITCODE -eq 0) { $ready = $true; break }
         Start-Sleep -Milliseconds 500
     }
@@ -62,16 +64,21 @@ try {
     # Verify archive readability; this is a fresh empty test database, not company data.
     Docker-Checked @("exec", $container, "pg_restore", "--list", "/tmp/auth-before.dump")
     Docker-Checked @("run", "--rm", "--network", $network,
-        "--mount", "type=bind,source=$backendRoot,target=/backend,readonly",
+        "--mount", "type=bind,source=$backendRoot,target=/repo/Backend,readonly",
+        "--mount", "type=bind,source=$(Join-Path $repoRoot 'pytest.ini'),target=/repo/pytest.ini,readonly",
+        "--mount", "type=bind,source=$(Join-Path $repoRoot 'conftest.py'),target=/repo/conftest.py,readonly",
+        "--workdir", "/repo/Backend",
         "--mount", "type=bind,source=$state,target=/reports",
         "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
         "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", $Image,
-        "python", "-m", "pytest", "-q", $TestFile, "--tb=short", "-o", "cache_dir=/tmp/pytest_cache")
+        "python", "-m", "pytest", "-q", $TestFile, "--isolated-postgres", "--junitxml=/reports/results.xml", "--tb=short", "-p", "no:cacheprovider")
 }
 finally {
     # Preserve the stopped test container and recovery artifacts. Never delete a database.
     & $Docker stop $container *> $null
+    $stopFailed = $LASTEXITCODE -ne 0
     Write-Host "Stopped isolated test container: $container"
     Write-Host "Private recovery artifacts: $state"
     Write-Host "No ports published; existing development databases were not targeted."
+    if ($stopFailed) { throw 'Could not confirm isolated Docker container shutdown' }
 }
