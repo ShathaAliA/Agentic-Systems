@@ -65,3 +65,8 @@ The API DTOs under `Backend/contracts/` are proposals, not live document endpoin
 
 Container setup, private environment files, runtime/test image targets and offline
 operator boundaries: [Core local container guide](Backend/docs/core-containers.md).
+
+Core review and proposed merge scope: [review](Backend/docs/core-review.md),
+[actual verification](Backend/docs/core-review-verification.md) and
+[local PR draft](Backend/docs/core-pr-draft.md). The draft is not an open PR;
+document integration and container verification remain pending.

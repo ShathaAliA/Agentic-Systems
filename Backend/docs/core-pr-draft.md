@@ -2,9 +2,12 @@
 
 **Title:** Add secure Core backend APIs, tenant provisioning and usage accounting
 
-**Head:** feature/core-backend  
-**Base:** Backend  
-**Proposed state:** Draft  
+**Head:** feature/core-backend
+
+**Base:** Backend
+
+**Proposed state:** Draft
+
 **Reviewed snapshots:** Core 9f033d2 plus local Subtask 3.5 changes; Backend 7d9e02b.
 Recompute the comparison and exact head SHA before any later authorized publication.
 
