@@ -7,6 +7,7 @@ SAFE_ERROR_CODES = frozenset({
     "cross_database_connect", "required_table_permission_missing", "runtime_negative_check_failed",
     "department_not_registered", "department_state_conflict", "attempts_exhausted", "stale_claim",
     "runtime_grant_policy_missing", "runtime_grant_policy_invalid", "runtime_permission_mismatch", "runtime_default_privileges",
+    "tenant_contract_invalid", "tenant_contract_unreadable", "tenant_contract_version_unsupported", "migration_revision_not_descendant",
     "tenant_contract_unavailable", "infrastructure_error",
 })
 
