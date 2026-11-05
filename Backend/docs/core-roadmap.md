@@ -38,6 +38,12 @@ Legal remains failed. Test schema contracts do not establish real document readi
 
 ## Independent U1 — credits, usage and company budget
 
+Post-3.5 Core CI preparation is implemented locally: pinned read-only workflow,
+isolated PostgreSQL job and bounded volume-free smoke tool. See core-ci.md and
+core-ci-verification.md. Latest distinct native coverage: 237 non-integration plus
+63 PostgreSQL tests passed in separate runs. Docker Desktop startup failed in its
+Inference manager; image/runtime checks and remote CI execution remain pending.
+
 Implemented in six commits based on `ef4d30a`, subsequently published with 2.4. Recorded validation:
 130 non-integration tests, 23 PostgreSQL integration tests. This is a tested
 accounting foundation with fake processing; real provider/RAG/billing integration
