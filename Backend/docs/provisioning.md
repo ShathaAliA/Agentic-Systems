@@ -108,7 +108,8 @@ into an ignored local URL file without printing it. This is an operator-only
 development script, not a production worker. Backups and URL files are under
 `.local/` (ignored). Protect and retain them; backups may contain sensitive data.
 
-The integration test requires `RUN_DEVELOPMENT_PROVISIONING=1`, `DEV_BACKUP_ACK=1`,
+The manual live integration test requires the explicit `--allow-live-provisioning`
+pytest option as well as `RUN_DEVELOPMENT_PROVISIONING=1`, `DEV_BACKUP_ACK=1`,
 `DEV_ADMIN_URL_FILE`, and `DEV_STATE_DIR`. It uses an existing Legal registration,
 does not reseed it, and never drops databases. It snapshots HR/Finance table rows
 and column definitions before/after and compares their registry entries. It

@@ -24,13 +24,13 @@ Legal remains failed. Test schema contracts do not establish real document readi
 | 2.2 Departments APIs | Implemented and published |
 | 2.3 Users & Memberships APIs | Implemented and published; also includes approved-role assignment/revocation |
 | 2.4 Roles & Permissions APIs | Implemented and published; verification and limits in role-permissions.md |
-| 2.5 Endpoint protection and permission tests | Implemented locally; cross-route policy inventory, identity matrix and Core isolation tests in core-access-contract.md |
+| 2.5 Endpoint protection and permission tests | Implemented and published; cross-route policy inventory, identity matrix and Core isolation tests in core-access-contract.md |
 
 ## Day 3 — Testing, Integration & Deployment
 
 | Task | Status |
 | --- | --- |
-| 3.1 Unit/integration tests | Existing Core suites implemented; final integration remains |
+| 3.1 Unit/integration tests | Core execution safety, unified runner and cross-module tests implemented locally; real document integration pending |
 | 3.2 PostgreSQL isolation/security | Core tests implemented; real document-schema integration pending |
 | 3.3 API contract with document developer | Local contracts/handoff notes exist; jointly verified agreement pending |
 | 3.4 Docker/environment/README | Development setup documented; production activation pending |

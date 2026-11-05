@@ -11,7 +11,7 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
 - [Subtask 2.3: central users, memberships and approved roles](Backend/docs/users.md)
 - [Independent task U1: question credits, usage and company budget](Backend/docs/usage.md)
-- [Corrected core roadmap and proposed Subtask 2.4](Backend/docs/core-roadmap.md)
+- [Core backend roadmap and task status](Backend/docs/core-roadmap.md)
 
 Authentication is disabled by default. Subtask 2.1 adds development-only password
 login, expiring/revocable opaque sessions, `GET /auth/me`, and reusable RBAC
@@ -26,26 +26,29 @@ See the setup guide before applying the central migration or changing grants.
 
 ## Tests
 
-From `Backend/`, install `requirements-test.txt`, then run:
-
-```sh
-python -m pytest -q -m "not integration"
-```
-
-Pytest deliberately collects `Backend/tests/` only. The older `test_*.py` files
-at the backend root are manually executed development scripts, some of which
-mutate the registry during import. Do not use them as an automatic test suite.
-
-Opt-in live development checks, with preflight, owner/ACL snapshots and backups:
+Install `Backend/requirements-test.txt` in a private Python environment. From the
+repository root, run all Core unit/API and isolated PostgreSQL groups with:
 
 ```powershell
-./Backend/tools/verify-development.ps1
+python Backend/tools/run-core-tests.py --suite all --backend native
 ```
 
-This requires the existing local `ai_platform_postgres`, HR/Finance seed records,
-and an already-registered Legal department. It never drops databases. The document
-schema contract is currently unavailable, so **Legal must remain failed**, not
-active. The supplied tenant contract example intentionally has `ready: false`.
+Native mode uses Windows/PowerShell 7.2+ and installed PostgreSQL 18 by default;
+`--postgres-bin` overrides its binaries. Docker mode is available with
+`--backend docker` and an existing `ai-platform-day2:dev` test image. See the
+[Subtask 3.1 testing guide](Backend/docs/core-testing.md) for unit-only mode,
+per-group operation, private/redacted reports and actual verification limits.
+
+Default pytest discovery is fenced to `Backend/tests/` from both the repository
+root and Backend, including a Backend-only build context. Legacy backend-root
+`test_*.py` scripts can mutate the registry during import and are rejected by the
+automatic test entry points. Environment flags alone cannot enable database tests.
+
+Original-cluster verification is a separate operator-only workflow. The Core
+runner never invokes it; manual live tests also require an explicit CLI opt-in,
+owner/ACL snapshots and backup acknowledgement. Do not run them as a substitute
+for isolated tests. **Legal must remain failed** until real document migrations
+and isolation checks pass; the supplied contract intentionally has `ready: false`.
 
 Roles & Permissions APIs: [setup, policy matrix and verification](Backend/docs/role-permissions.md).
 
