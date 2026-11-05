@@ -6,6 +6,7 @@ SAFE_ERROR_CODES = frozenset({
     "runtime_elevated", "runtime_role_membership", "runtime_object_owner", "runtime_ddl_privilege",
     "cross_database_connect", "required_table_permission_missing", "runtime_negative_check_failed",
     "department_not_registered", "department_state_conflict", "attempts_exhausted", "stale_claim",
+    "runtime_grant_policy_missing", "runtime_grant_policy_invalid", "runtime_permission_mismatch", "runtime_default_privileges",
     "tenant_contract_unavailable", "infrastructure_error",
 })
 
