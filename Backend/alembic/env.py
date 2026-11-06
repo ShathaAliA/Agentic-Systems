@@ -2,8 +2,14 @@ from logging.config import fileConfig
 
 from alembic import context
 
-from app.database import engine
+from sqlalchemy import create_engine
+from app.credentials import configured_url
 from app.models import Base
+from app.auth import models as auth_models  # Register additive central auth tables.
+from app.departments import models as department_models  # Central administration only.
+from app.users import models as user_models
+from app.usage import models as usage_models
+from app.role_policies import models as role_policy_models
 
 
 config = context.config
@@ -14,6 +20,7 @@ if config.config_file_name is not None:
 
 # SQLAlchemy Models
 target_metadata = Base.metadata
+engine = create_engine(configured_url("CENTRAL_MIGRATION_DATABASE_URL"), hide_parameters=True)
 
 
 def run_migrations_offline():

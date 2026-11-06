@@ -1,0 +1,21 @@
+{
+  "review_status": "Core proposal; not jointly approved; no live endpoint implementation",
+  "request": {
+    "department_id": "synthetic-hr",
+    "question": "What is the synthetic review policy?",
+    "request_key": "synthetic-question-1"
+  },
+  "response": {
+    "status": "answered",
+    "answer": "Synthetic example only.",
+    "sources": [{
+      "document_id": 1,
+      "version_id": "opaque-version-reference-1",
+      "name": "Synthetic policy",
+      "location": "Page 2",
+      "quote": "Synthetic supporting text."
+    }],
+    "unanswered_departments": [],
+    "handoff_available": false
+  }
+}
