@@ -1,19 +1,26 @@
-# Environment variables
+# Environment variables; only non-secret templates may be tracked.
 .env
 .env.*
 !.env.example
+!.env.*.example
 
-# Python virtual environments
+# Python virtual environments and caches
 .venv/
 venv/
-
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
-
-# Other local files
-.vscode/
 .pytest_cache/
-*.log
+
+# Private local state, editor settings and generated application data
 .local/
+.vscode/
+node_modules/
+chroma_db/
+uploads/
+storage/
+
+# Logs and recovery artifacts
+*.log
+*.dump
+*.backup
