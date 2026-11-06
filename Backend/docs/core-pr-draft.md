@@ -1,4 +1,4 @@
-# Local PR draft — not opened or published
+# Core Draft PR description
 
 **Title:** Add secure Core backend APIs, tenant provisioning and usage accounting
 
@@ -8,8 +8,10 @@
 
 **Proposed state:** Draft
 
-**Reviewed snapshots:** Core 9f033d2 plus local Subtask 3.5 changes; Backend 7d9e02b.
-Recompute the comparison and exact head SHA before any later authorized publication.
+**Reviewed snapshots:** Core 37d5fdf; Backend 7d9e02b; documents-ai 81c239f.
+The user authorized publication as a Draft on 2026-11-06. The publication update
+changes this description only; successful CI evidence below belongs to 37d5fdf,
+and checks for the subsequent documentation commit must be assessed separately.
 
 ## Proposed PR body
 
@@ -51,27 +53,46 @@ Do not use destructive downgrades or remove volumes as a rollback shortcut.
 
 ### Validation
 
-- Full native isolated suite: **298 passed**, zero failures/errors/skips, including
-  63 PostgreSQL tests. Historical synthetic users/department/RBAC data survive the
-  Backend-base → p002 → current-head path in each PostgreSQL group.
+- GitHub Actions [Core verification run #1](https://github.com/ShathaAliA/Agentic-Systems/actions/runs/42134087470)
+  completed successfully for **37d5fdf**: **237 non-integration tests on Linux and
+  63 isolated PostgreSQL tests on Windows**, 300 passed in total. Historical
+  synthetic users/department/RBAC data survive the Backend-base → p002 → current-head
+  path in each PostgreSQL group.
+- Both Docker runtime and test images built successfully on GitHub. Restricted
+  runtime smoke passed: process health, UID 10001, absence of pytest, writable
+  tmpfs and read-only-root configuration.
 - Compose config --quiet passed with a non-secret, process-local placeholder.
 - Gitleaks scanned the cumulative Core history: one reviewed false positive on
   synthetic-question-1 in an idempotency example, no actual secret detected.
 - Whitespace and private-file scope gates checked. Only non-secret .env.example
   templates are tracked; local state and recovery reports stay outside Git.
 
-See Backend/docs/core-review-verification.md for commands and retained local reports.
-No GitHub CI run is claimed. Docker image builds/runtime/integration smoke tests
-were not executed because the Linux engine is unavailable.
+See Backend/docs/core-review-verification.md and core-ci-verification.md for the
+historical local evidence, and the linked GitHub run for hosted results. The local
+Docker Desktop Inference manager still fails; hosted build/smoke success does not
+resolve that local problem. PostgreSQL tests inside Docker, mounted secret/tenant
+volume ownership and real document integration were not covered by this CI run.
+One non-failing Starlette TestClient/httpx deprecation warning remains; dependency
+migration requires separate compatibility verification.
 
 ### Open review and integration gates
 
 - Review the full cumulative diff, including both branches' .gitignore additions;
   do not discard private-state/artifact exclusions. No mergeability claim is made.
-- Complete container verification when Docker is available, on fresh infrastructure.
-- documents-ai is not included or merged. At 1a76601 it still needs the privileged
-  runtime guard and central migration-history fixes, real tenant migrations/routing,
-  document audience/original access enforcement and independent integration tests.
+- Complete remaining container/database and mounted-secret checks on fresh
+  infrastructure; hosted runtime smoke is already successful.
+- documents-ai is not included or merged. At **81c239f**, its tenant dependency uses
+  a fixed shared connection and interpolates request input into search_path rather
+  than using Core's registry-authorized separate-database connection. Restore the
+  runtime privilege rejection and remove fixed privileged connection credentials.
+- Restore established central migration history. The document migration currently
+  starts an independent root in central alembic/versions; provide real business
+  migrations descending from tenant_0001 and an agreed **Core V1** contract with
+  exact revision/tables/explicit privileges for each separate department database.
+- Keep central RBAC checks on the central session before tenant access; implement
+  document audience (department AND role), restricted original downloads and safe
+  response DTOs. Verify correction/reindex/version consistency, source locations,
+  bounded error responses and independent cross-department isolation tests.
 - The V1 API artifacts are Core proposals awaiting joint approval; they mount no
   document endpoints. Real OCR/RAG/provider billing, frontend, human chat, Microsoft
   Entra, TLS and production deployment are outside this Core review.
@@ -85,7 +106,7 @@ readiness gates remain unresolved. Do not enable auto-merge or deploy from this 
 - [x] Core code/security review and isolated test evidence recorded.
 - [x] Real Legal unchanged, example unready, original department databases untouched.
 - [x] Document/RAG code and document developer's migrations left unchanged.
-- [ ] Separate authorization to push local commits and/or open this Draft PR.
-- [ ] Refresh head/base comparison and recheck secrets and private files.
+- [x] User authorized the documentation update and opening this Draft PR.
+- [x] Head/base snapshots refreshed; publication checks cover secrets/private files.
 - [ ] Resolve review findings and applicable container/integration gates.
 - [ ] Separate authorization and review for any merge or deployment.
