@@ -21,15 +21,33 @@ def get_embedding_model():
     return _embedding_model
 
 
-# Provider configuration
 PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 
-if PROVIDER == "openai":
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-elif PROVIDER == "gemini":
-    from google import genai
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+_llm_client = None
+
+
+def get_llm_client():
+    """Lazy init — never called at import time."""
+    global _llm_client
+    if _llm_client is not None:
+        return _llm_client
+
+    if PROVIDER == "openai":
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set")
+        _llm_client = OpenAI(api_key=api_key)
+    elif PROVIDER == "gemini":
+        from google import genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is not set")
+        _llm_client = genai.Client(api_key=api_key)
+    else:
+        raise RuntimeError(f"Unsupported LLM_PROVIDER: {PROVIDER}")
+
+    return _llm_client
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
@@ -48,19 +66,46 @@ def process_and_store_chunks(
     document_id: int,
     chunks: list,
     version_number: int = 1,
+    pages: list | None = None,
 ):
-    """Store chunks for a specific document version."""
+    """
+    Store chunks for a specific document version.
+
+    If `pages` (list of {page_number, text}) is provided, chunks are
+    attributed to their real page/slide/sheet. Otherwise, chunks are
+    attributed to page 1 (legacy fallback).
+    """
     model = get_embedding_model()
-    for chunk in chunks:
-        vector = model.encode(chunk).tolist()
-        new_chunk = DocumentChunk(
-            document_id=document_id,
-            content=chunk,
-            embedding=vector,
-            page_number=1,
-            version_number=version_number,
-        )
-        db.add(new_chunk)
+
+    if pages:
+        # Split each page separately → preserve real location
+        for page in pages:
+            page_num = page.get("page_number", 1)
+            page_text = page.get("text", "")
+            if not page_text.strip():
+                continue
+            page_chunks = chunk_text(page_text)
+            for chunk in page_chunks:
+                vector = model.encode(chunk).tolist()
+                db.add(DocumentChunk(
+                    document_id=document_id,
+                    content=chunk,
+                    embedding=vector,
+                    page_number=page_num,
+                    version_number=version_number,
+                ))
+    else:
+        # Legacy fallback: no page info → attribute to page 1
+        for chunk in chunks:
+            vector = model.encode(chunk).tolist()
+            db.add(DocumentChunk(
+                document_id=document_id,
+                content=chunk,
+                embedding=vector,
+                page_number=1,
+                version_number=version_number,
+            ))
+
     db.commit()
 
 
@@ -74,7 +119,7 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
     ).where(
         Document.department_id == department_id,
         Document.status == "approved",
-        DocumentChunk.version_number == Document.version,  # ← فقط الإصدار الحالي
+        DocumentChunk.version_number == Document.version,
     ).order_by(
         DocumentChunk.embedding.cosine_distance(query_vector)
     ).limit(limit)
@@ -110,6 +155,7 @@ def generate_answer(query: str, context: str) -> str:
 السؤال:
 {query}
 """
+    client = get_llm_client()
     try:
         if PROVIDER == "openai":
             response = client.chat.completions.create(

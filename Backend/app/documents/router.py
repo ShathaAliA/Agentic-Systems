@@ -101,7 +101,6 @@ async def upload_document(
             detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.",
         )
 
-    # ✅ ربط رسائل الرفض المحددة
     if result["status"] != "accepted":
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -171,10 +170,15 @@ async def upload_document(
             ))
             db.commit()
 
+            # ✅ PR5: تمرير pages للحفاظ على المواقع الحقيقية
             chunks = rag_service.chunk_text(extracted_text)
             if chunks:
                 rag_service.process_and_store_chunks(
-                    db, new_doc.id, chunks, version_number=new_doc.version
+                    db,
+                    new_doc.id,
+                    chunks,
+                    version_number=new_doc.version,
+                    pages=result["extraction"].get("pages"),
                 )
 
             return {
@@ -292,8 +296,13 @@ async def revise_document(
 
             new_chunks = rag_service.chunk_text(new_text)
             if new_chunks:
+                # revise لا يملك pages — نمرر None (fallback إلى page 1)
                 rag_service.process_and_store_chunks(
-                    db, doc.id, new_chunks, version_number=new_version_number
+                    db,
+                    doc.id,
+                    new_chunks,
+                    version_number=new_version_number,
+                    pages=None,
                 )
 
             db.add(DocumentAuditLog(
