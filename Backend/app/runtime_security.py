@@ -1,7 +1,4 @@
 from sqlalchemy import event
-import logging
-
-logger = logging.getLogger(__name__)
 
 def restrict_runtime_engine(engine):
     @event.listens_for(engine, "connect")
@@ -20,7 +17,6 @@ def restrict_runtime_engine(engine):
                 FROM pg_roles WHERE rolname=current_user
             """)
             if any(cursor.fetchone()):
-                # تحذير بدل توقف
-                logger.warning("WARNING: Using administrative credentials in FastAPI runtime. This is not recommended for production.")
+                raise RuntimeError("Administrative credentials cannot be used by FastAPI runtime")
         dbapi_connection.rollback()
     return engine
