@@ -34,6 +34,18 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+# رسائل آمنة لمستخدم عند رفض الملف (لا تكشف تفاصيل داخلية)
+REJECTION_MESSAGES = {
+    "unsupported_file_type": "نوع الملف غير مدعوم.",
+    "extension_mismatch": "امتداد الملف لا يطابق محتواه. يرجى التأكد من الملف.",
+    "password_required": "الملف مشفر بكلمة مرور. يرجى إزالة الحماية أولاً.",
+    "too_many_pages": "الملف يتجاوز 100 صفحة. يرجى تقسيمه إلى ملفات أصغر.",
+    "invalid_format": "الملف تالف أو غير قابل للقراءة.",
+    "no_text_extraction_without_ocr": "لا يمكن استخراج نص من هذا الملف (قد يحتاج OCR).",
+    "extraction_failed": "تعذر استخراج النص من الملف.",
+}
+
+
 def _open_department_session(user_id: str, department_id: str, permission_code: str):
     try:
         return authorized_department_session(
@@ -89,15 +101,16 @@ async def upload_document(
             detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.",
         )
 
+    # ✅ ربط رسائل الرفض المحددة
     if result["status"] != "accepted":
         if os.path.exists(temp_path):
             os.remove(temp_path)
         reason = result.get("reason", "unknown")
         logger.warning("File rejected: %s (file=%s)", reason, file.filename)
-        raise HTTPException(
-            status_code=400,
-            detail="الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف.",
+        safe_message = REJECTION_MESSAGES.get(
+            reason, "الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف."
         )
+        raise HTTPException(status_code=400, detail=safe_message)
 
     safe_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
@@ -130,7 +143,7 @@ async def upload_document(
                     existing_version.status = "archived"
                 db.commit()
 
-            extracted_text = result["extraction"].get("original_text", "")
+            extracted_text = result["extraction"].get("original_text", "") or ""
 
             new_doc = Document(
                 filename=file.filename,
@@ -229,7 +242,7 @@ async def approve_document(
 
 
 # ------------------------------------------------------------------
-# Revise (creates new version; keeps old chunks)
+# Revise
 # ------------------------------------------------------------------
 @router.post("/{document_id}/revise")
 async def revise_document(
