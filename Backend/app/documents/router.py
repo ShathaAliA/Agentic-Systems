@@ -15,6 +15,11 @@ from app.documents.models import (
     DocumentRevisionLog,
     DocumentChunk,
 )
+from app.documents.audience_service import (
+    get_user_context,
+    filter_visible_documents,
+    user_can_access_document,
+)
 from app.documents.file_processor import process_file
 from app.documents import rag_service
 from app.auth.dependencies import get_current_user
@@ -271,7 +276,7 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask
+# Ask (with audience filtering)
 # ------------------------------------------------------------------
 @router.post("/ask")
 async def ask_question(
@@ -283,6 +288,8 @@ async def ask_question(
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    user_depts, user_roles = get_user_context(central_db, current_user.id)
+
     try:
         with _open_department_session(
             user_id=current_user.id,
@@ -293,7 +300,16 @@ async def ask_question(
             if not context_chunks:
                 return {"answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات."}
 
-            context = "\n\n".join([c["content"] for c in context_chunks])
+            allowed_chunks = []
+            for c in context_chunks:
+                doc_id = c.get("document_id")
+                if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
+                    allowed_chunks.append(c)
+
+            if not allowed_chunks:
+                return {"answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها."}
+
+            context = "\n\n".join([c["content"] for c in allowed_chunks])
             try:
                 answer = rag_service.generate_answer(query, context)
             except Exception as e:
@@ -312,7 +328,7 @@ async def ask_question(
                         "chunk_id": c["chunk_id"],
                         "version": c.get("version"),
                     }
-                    for c in context_chunks
+                    for c in allowed_chunks
                 ],
             }
     except HTTPException:
@@ -323,7 +339,7 @@ async def ask_question(
 
 
 # ------------------------------------------------------------------
-# List (DTO)
+# List (with audience filtering)
 # ------------------------------------------------------------------
 @router.get("/")
 async def list_documents(
@@ -334,6 +350,8 @@ async def list_documents(
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    user_depts, user_roles = get_user_context(central_db, current_user.id)
+
     try:
         with _open_department_session(
             user_id=current_user.id,
@@ -343,6 +361,8 @@ async def list_documents(
             documents = db.query(Document).filter(
                 Document.department_id == department_id,
             ).all()
+
+            documents = filter_visible_documents(db, documents, user_depts, user_roles)
 
             safe_documents = [
                 {

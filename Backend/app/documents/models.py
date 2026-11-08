@@ -51,3 +51,15 @@ class DocumentRevisionLog(Base):
     new_text = Column(Text, nullable=False)
     revised_by = Column(String(36), nullable=False)
     revised_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class DocumentAudience(Base):
+    __tablename__ = "document_audiences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    # NULL department_id = "all departments"
+    department_id = Column(String(36), nullable=True)
+    # NULL role_id = "all roles"
+    role_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String(36), nullable=False)    
