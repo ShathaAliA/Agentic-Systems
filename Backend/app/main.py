@@ -30,10 +30,11 @@ def create_app(*, central_engine=None, auth_settings=None):
     # --- Routers ---
     app.include_router(auth_router)
     app.include_router(departments_router)
-    app.include_router(documents_router) # <-- شغلنا
+    app.include_router(documents_router) 
     app.include_router(users_router)
     app.include_router(usage_router)
     app.include_router(role_policies_router)
+    
 
     @app.middleware("http")
     async def prevent_auth_caching(request: Request, call_next):
