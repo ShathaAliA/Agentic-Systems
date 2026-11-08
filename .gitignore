@@ -37,3 +37,7 @@ grant_admin.py
 central_migration.json
 
 create_tables.py
+check_hr_schema.py
+check_tables.py
+create_hr_tables.py
+create_hr_tables_direct.py

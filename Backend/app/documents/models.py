@@ -21,6 +21,7 @@ class DocumentChunk(Base):
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
     content = Column(Text, nullable=False)
+    page_number = Column(Integer, nullable=True) # <-- أضفنا هذا
     embedding = Column(Vector(768))
 
 class DocumentAuditLog(Base):

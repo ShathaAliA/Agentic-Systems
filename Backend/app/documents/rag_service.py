@@ -13,8 +13,14 @@ def get_embedding_model():
         _embedding_model = SentenceTransformer("Omartificial-Intelligence-Space/Arabic-Triplet-Matryoshka-V2")
     return _embedding_model
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+PROVIDER = os.getenv("LLM_PROVIDER", "gemini") # <-- أضفنا هذا
+
+if PROVIDER == "openai":
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+elif PROVIDER == "gemini":
+    from google import genai
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     if not text: return []
@@ -32,7 +38,8 @@ def process_and_store_chunks(db: Session, document_id: int, chunks: list):
         new_chunk = DocumentChunk(
             document_id=document_id,
             content=chunk,
-            embedding=vector
+            embedding=vector,
+            page_number=1 # <-- نحط 1 مؤقتاً
         )
         db.add(new_chunk)
     db.commit()
@@ -59,16 +66,13 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
                     "content": r.content,
                     "document_name": doc.filename,
                     "chunk_id": r.id,
-                    "version": doc.version, # <-- أضفنا الإصدار
-                    "page_number": None # الموضع (اختياري، يمكن إضافته لاحقاً)
+                    "version": doc.version,
+                    "page_number": r.page_number # <-- نرجع الموضع
                 })
     
     return filtered_results
 
 def generate_answer(query: str, context: str) -> str:
-    if not gemini_client:
-        return "خطأ: مفتاح Gemini API غير موجود في ملف .env"
-        
     prompt = f"""أنت مساعد ذكي لشركة وادي مكة. أجب على السؤال بناءً على السياق المرفق فقط.
 إذا لم تجد الإجابة في السياق، قل "لا أعرف" ولا تحاول التخمين.
 إذا وجدت تعارضاً بين المصادر، اذكر التعارض بوضوح ولا تفضل أحدها.
@@ -80,10 +84,17 @@ def generate_answer(query: str, context: str) -> str:
 {query}
 """
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt
-        )
-        return response.text
+        if PROVIDER == "openai":
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        else:
+            response = client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=prompt
+            )
+            return response.text
     except Exception as e:
         return f"حدث خطأ أثناء توليد الإجابة: {e}"
