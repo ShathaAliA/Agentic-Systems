@@ -520,3 +520,383 @@ async def delete_document(
     except Exception as e:
         logger.exception("Delete error: %s", e)
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+# ------------------------------------------------------------------
+# B2: Get document metadata
+# ------------------------------------------------------------------
+@router.get("/{document_id}")
+async def get_document(
+    document_id: int,
+    department_id: str,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:read", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    user_depts, user_roles = get_user_context(central_db, current_user.id)
+
+    try:
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:read",
+        ) as db:
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.department_id == department_id,
+            ).first()
+            if not doc:
+                raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            if not user_can_access_document(db, doc.id, user_depts, user_roles):
+                raise HTTPException(status_code=403, detail="Permission denied")
+
+            return {
+                "id": doc.id,
+                "filename": doc.filename,
+                "file_type": doc.file_type,
+                "status": doc.status,
+                "version": doc.version,
+                "upload_date": doc.upload_date,
+                # لا نكشف file_path أو extracted_text
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Get document error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+
+# ------------------------------------------------------------------
+# B2: Update document metadata
+# ------------------------------------------------------------------
+@router.patch("/{document_id}")
+async def update_document_metadata(
+    document_id: int,
+    department_id: str,
+    filename: str | None = None,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:update", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:update",
+        ) as db:
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.department_id == department_id,
+            ).first()
+            if not doc:
+                raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            if filename is not None:
+                if not filename.strip():
+                    raise HTTPException(status_code=400, detail="اسم الملف لا يمكن أن يكون فارغاً")
+                doc.filename = filename.strip()
+
+            db.add(DocumentAuditLog(
+                document_id=doc.id,
+                action="update_metadata",
+                performed_by=current_user.id,
+                version_number=doc.version,
+            ))
+            db.commit()
+
+            return {
+                "status": "success",
+                "message": "تم تحديث بيانات المستند.",
+                "id": doc.id,
+                "filename": doc.filename,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Update metadata error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+
+# ------------------------------------------------------------------
+# B2: Replace document (new version)
+# ------------------------------------------------------------------
+@router.post("/{document_id}/version")
+async def replace_document_version(
+    document_id: int,
+    file: UploadFile = File(...),
+    department_id: str = Form(...),
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:update", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    # حجم الملف
+    MAX_SIZE = 20 * 1024 * 1024
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="حجم الملف يتجاوز 20 ميجابايت")
+
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    temp_filename = f"temp_{uuid.uuid4()}{file_ext}"
+    temp_path = os.path.join(UPLOAD_DIR, temp_filename)
+
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        result = process_file(temp_path)
+    except Exception as e:
+        logger.exception("Replace error processing file %s: %s", temp_path, e)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(
+            status_code=400,
+            detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.",
+        )
+
+    if result["status"] != "accepted":
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        reason = result.get("reason", "unknown")
+        logger.warning("Replace rejected: %s (file=%s)", reason, file.filename)
+        safe_message = REJECTION_MESSAGES.get(
+            reason, "الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف."
+        )
+        raise HTTPException(status_code=400, detail=safe_message)
+
+    safe_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
+    shutil.move(temp_path, file_path)
+
+    try:
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:update",
+        ) as db:
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.department_id == department_id,
+            ).first()
+            if not doc:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            old_version = doc.version
+            new_version_number = old_version + 1
+
+            extracted_text = result["extraction"].get("original_text", "") or ""
+
+            db.add(DocumentRevisionLog(
+                document_id=doc.id,
+                old_text=doc.extracted_text,
+                new_text=extracted_text,
+                revised_by=current_user.id,
+                from_version=old_version,
+                to_version=new_version_number,
+            ))
+
+            doc.file_path = file_path
+            doc.file_type = file_ext
+            doc.extracted_text = extracted_text
+            doc.version = new_version_number
+            doc.status = "pending_review"
+
+            db.add(DocumentVersion(
+                document_id=doc.id,
+                version_number=new_version_number,
+                status="pending",
+            ))
+
+            new_chunks = rag_service.chunk_text(extracted_text)
+            if new_chunks:
+                rag_service.process_and_store_chunks(
+                    db,
+                    doc.id,
+                    new_chunks,
+                    version_number=new_version_number,
+                    pages=result["extraction"].get("pages"),
+                )
+
+            db.add(DocumentAuditLog(
+                document_id=doc.id,
+                action="replace",
+                performed_by=current_user.id,
+                version_number=new_version_number,
+            ))
+            db.commit()
+
+            return {
+                "status": "success",
+                "message": "تم استبدال الملف. الإصدار الجديد بانتظار المراجعة.",
+                "new_version": new_version_number,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Replace DB error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+
+# ------------------------------------------------------------------
+# B2: Manage audiences (list + add + delete)
+# ------------------------------------------------------------------
+@router.post("/{document_id}/permissions")
+async def add_document_audience(
+    document_id: int,
+    department_id: str,
+    audience_department_id: str | None = None,
+    audience_role_id: str | None = None,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:manage_permissions", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if audience_department_id is None and audience_role_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="يجب تحديد قسم أو دور (أو كلاهما).",
+        )
+
+    try:
+        from app.documents.models import DocumentAudience
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:manage_permissions",
+        ) as db:
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.department_id == department_id,
+            ).first()
+            if not doc:
+                raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            existing = db.query(DocumentAudience).filter(
+                DocumentAudience.document_id == document_id,
+                DocumentAudience.department_id == audience_department_id,
+                DocumentAudience.role_id == audience_role_id,
+            ).first()
+            if existing:
+                return {"status": "exists", "audience_id": existing.id}
+
+            audience = DocumentAudience(
+                document_id=document_id,
+                department_id=audience_department_id,
+                role_id=audience_role_id,
+                created_by=current_user.id,
+            )
+            db.add(audience)
+            db.add(DocumentAuditLog(
+                document_id=doc.id,
+                action="add_audience",
+                performed_by=current_user.id,
+                version_number=doc.version,
+            ))
+            db.commit()
+            db.refresh(audience)
+
+            return {"status": "success", "audience_id": audience.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Add audience error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+
+@router.get("/{document_id}/permissions")
+async def list_document_audiences(
+    document_id: int,
+    department_id: str,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:manage_permissions", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        from app.documents.models import DocumentAudience
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:manage_permissions",
+        ) as db:
+            doc = db.query(Document).filter(
+                Document.id == document_id,
+                Document.department_id == department_id,
+            ).first()
+            if not doc:
+                raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            audiences = db.query(DocumentAudience).filter(
+                DocumentAudience.document_id == document_id,
+            ).all()
+
+            return {
+                "count": len(audiences),
+                "audiences": [
+                    {
+                        "id": a.id,
+                        "department_id": a.department_id,
+                        "role_id": a.role_id,
+                        "created_at": a.created_at,
+                    }
+                    for a in audiences
+                ],
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("List audiences error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+
+@router.delete("/{document_id}/permissions/{audience_id}")
+async def delete_document_audience(
+    document_id: int,
+    audience_id: int,
+    department_id: str,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:manage_permissions", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        from app.documents.models import DocumentAudience
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:manage_permissions",
+        ) as db:
+            audience = db.query(DocumentAudience).filter(
+                DocumentAudience.id == audience_id,
+                DocumentAudience.document_id == document_id,
+            ).first()
+            if not audience:
+                raise HTTPException(status_code=404, detail="الجمهور غير موجود")
+
+            db.delete(audience)
+            db.add(DocumentAuditLog(
+                document_id=document_id,
+                action="delete_audience",
+                performed_by=current_user.id,
+                version_number=None,
+            ))
+            db.commit()
+
+            return {"status": "success", "message": "تم حذف الجمهور."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Delete audience error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
