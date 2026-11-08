@@ -36,18 +36,29 @@ def get_db():
     finally:
         db.close()
 
-# --- دالة الاتصال الآمنة ---
-def get_department_db(department_id: str = Form(...)):
-    """
-    جلسة قاعدة بيانات آمنة.
-    (شذى طلبت عدم استخدام search_path من الطلب، فنستخدم القاعدة المركزية ونفلتر بالـ department_id)
-    """
+# DEPRECATED: get_department_db previously returned a central session.
+# Use `authorized_department_session` from app.database_router for business data,
+# and `get_central_db` for authentication/permission checks.
+
+# --- استيراد الموديلز عشان Alembic يتعرف عليها ---
+from app.models import Base, User, Department, DepartmentMembership, Role, Permission, RolePermission, RoleAssignment, DepartmentDatabase
+from app.documents.models import Document, DocumentChunk, DocumentAuditLog, DocumentVersion, DocumentRevisionLog
+
+
+from app.database_router import authorized_department_session
+
+
+# ============================================================
+# Central session for authentication/permission checks only.
+# Department business data must go through
+# app.database_router.authorized_department_session.
+# ============================================================
+
+def get_central_db():
+    """جلسة مركزية للتحقق من الهوية والصلاحيات فقط (لا تُستخدم لبيانات الأعمال)."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# --- استيراد الموديلز عشان Alembic يتعرف عليها ---
-from app.models import Base, User, Department, DepartmentMembership, Role, Permission, RolePermission, RoleAssignment, DepartmentDatabase
-from app.documents.models import Document, DocumentChunk, DocumentAuditLog, DocumentVersion, DocumentRevisionLog

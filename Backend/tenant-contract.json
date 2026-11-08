@@ -1,0 +1,13 @@
+{
+  "contract_version": "1.0",
+  "ready": false,
+  "required_revision": "tenant_0002",
+  "required_tables": [
+    "documents",
+    "document_versions",
+    "document_revision_logs",
+    "document_audit_logs",
+    "document_chunks",
+    "_provisioning_identity"
+  ]
+}

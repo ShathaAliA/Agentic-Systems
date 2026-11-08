@@ -37,3 +37,8 @@ openai
 arabic-reshaper
 python-bidi
 
+python-docx
+openpyxl
+python-pptx
+pillow
+pandas
