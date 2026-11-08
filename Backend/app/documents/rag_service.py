@@ -43,7 +43,13 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
     return [c for c in chunks if c]
 
 
-def process_and_store_chunks(db: Session, document_id: int, chunks: list):
+def process_and_store_chunks(
+    db: Session,
+    document_id: int,
+    chunks: list,
+    version_number: int = 1,
+):
+    """Store chunks for a specific document version."""
     model = get_embedding_model()
     for chunk in chunks:
         vector = model.encode(chunk).tolist()
@@ -52,18 +58,23 @@ def process_and_store_chunks(db: Session, document_id: int, chunks: list):
             content=chunk,
             embedding=vector,
             page_number=1,
+            version_number=version_number,
         )
         db.add(new_chunk)
     db.commit()
 
 
 def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit: int = 3):
+    """Retrieve chunks from CURRENT approved version only."""
     model = get_embedding_model()
     query_vector = model.encode(query).tolist()
 
-    stmt = select(DocumentChunk).join(Document).where(
+    stmt = select(DocumentChunk).join(
+        Document, Document.id == DocumentChunk.document_id
+    ).where(
         Document.department_id == department_id,
         Document.status == "approved",
+        DocumentChunk.version_number == Document.version,  # ← فقط الإصدار الحالي
     ).order_by(
         DocumentChunk.embedding.cosine_distance(query_vector)
     ).limit(limit)
@@ -81,6 +92,7 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
                     "document_name": doc.filename,
                     "chunk_id": r.id,
                     "version": doc.version,
+                    "version_number": r.version_number,
                     "page_number": r.page_number,
                 })
 
@@ -112,7 +124,5 @@ def generate_answer(query: str, context: str) -> str:
             )
             return response.text
     except Exception:
-        # لا نكشف str(e) أو تفاصيل المزوّد للمستخدم.
-        # router.py يلتقط الاستثناء، يسجّله داخلياً، ويعيد 502 برسالة عامة.
         logger.exception("LLM provider error")
         raise

@@ -34,9 +34,6 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# ------------------------------------------------------------------
-# Helper: فتح جلسة القسم بعد التحقق المركزي، مع رسائل خطأ آمنة.
-# ------------------------------------------------------------------
 def _open_department_session(user_id: str, department_id: str, permission_code: str):
     try:
         return authorized_department_session(
@@ -123,6 +120,7 @@ async def upload_document(
                     document_id=existing_doc.id,
                     action="archive",
                     performed_by=current_user.id,
+                    version_number=existing_doc.version,
                 ))
                 existing_version = db.query(DocumentVersion).filter(
                     DocumentVersion.document_id == existing_doc.id,
@@ -156,12 +154,15 @@ async def upload_document(
                 document_id=new_doc.id,
                 action="upload",
                 performed_by=current_user.id,
+                version_number=new_doc.version,
             ))
             db.commit()
 
             chunks = rag_service.chunk_text(extracted_text)
             if chunks:
-                rag_service.process_and_store_chunks(db, new_doc.id, chunks)
+                rag_service.process_and_store_chunks(
+                    db, new_doc.id, chunks, version_number=new_doc.version
+                )
 
             return {
                 "status": "success",
@@ -216,6 +217,7 @@ async def approve_document(
                 document_id=doc.id,
                 action="approve",
                 performed_by=current_user.id,
+                version_number=doc.version,
             ))
             db.commit()
             return {"status": "success", "message": "تم اعتماد المستند ونشره في البحث."}
@@ -227,7 +229,7 @@ async def approve_document(
 
 
 # ------------------------------------------------------------------
-# Revise
+# Revise (creates new version; keeps old chunks)
 # ------------------------------------------------------------------
 @router.post("/{document_id}/revise")
 async def revise_document(
@@ -253,21 +255,47 @@ async def revise_document(
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            old_version = doc.version
+            new_version_number = old_version + 1
+
             db.add(DocumentRevisionLog(
                 document_id=doc.id,
                 old_text=doc.extracted_text,
                 new_text=new_text,
                 revised_by=current_user.id,
+                from_version=old_version,
+                to_version=new_version_number,
             ))
-            doc.extracted_text = new_text
 
-            db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).delete()
-            chunks = rag_service.chunk_text(new_text)
-            if chunks:
-                rag_service.process_and_store_chunks(db, doc.id, chunks)
+            doc.extracted_text = new_text
+            doc.version = new_version_number
+            doc.status = "pending_review"
+
+            db.add(DocumentVersion(
+                document_id=doc.id,
+                version_number=new_version_number,
+                status="pending",
+            ))
+
+            new_chunks = rag_service.chunk_text(new_text)
+            if new_chunks:
+                rag_service.process_and_store_chunks(
+                    db, doc.id, new_chunks, version_number=new_version_number
+                )
+
+            db.add(DocumentAuditLog(
+                document_id=doc.id,
+                action="revise",
+                performed_by=current_user.id,
+                version_number=new_version_number,
+            ))
 
             db.commit()
-            return {"status": "success", "message": "تم تصحيح النص وإعادة معالجة المقاطع."}
+            return {
+                "status": "success",
+                "message": "تم التصحيح. الإصدار الجديد بانتظار المراجعة.",
+                "new_version": new_version_number,
+            }
     except HTTPException:
         raise
     except Exception as e:
@@ -276,7 +304,7 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask (with audience filtering)
+# Ask
 # ------------------------------------------------------------------
 @router.post("/ask")
 async def ask_question(
@@ -327,6 +355,8 @@ async def ask_question(
                         "document": c["document_name"],
                         "chunk_id": c["chunk_id"],
                         "version": c.get("version"),
+                        "version_number": c.get("version_number"),
+                        "location": c.get("page_number"),
                     }
                     for c in allowed_chunks
                 ],
@@ -339,7 +369,7 @@ async def ask_question(
 
 
 # ------------------------------------------------------------------
-# List (with audience filtering)
+# List
 # ------------------------------------------------------------------
 @router.get("/")
 async def list_documents(
@@ -384,7 +414,7 @@ async def list_documents(
 
 
 # ------------------------------------------------------------------
-# Download (head/deputy/admin only)
+# Download
 # ------------------------------------------------------------------
 @router.get("/download/{document_id}")
 async def download_document(
@@ -459,6 +489,7 @@ async def delete_document(
                 document_id=doc.id,
                 action="archive",
                 performed_by=current_user.id,
+                version_number=doc.version,
             ))
             db.commit()
             return {"status": "success", "message": "تم أرشفة المستند."}
