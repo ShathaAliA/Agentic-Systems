@@ -7,6 +7,9 @@ from PIL import Image
 from docx import Document
 from pptx import Presentation
 import json
+import pytesseract
+import os
+import uuid
 
 detector = Magika()
 
@@ -48,7 +51,6 @@ def validate_file(extension, detected_type):
     if expected_type is None:
         return {"is_supported": False, "status": "unsupported_file_type"}
     
-    # حل مشكلة Magika مع ملفات البوربوينت
     if extension.lower() == ".pptx" and detected_type in ("pptx", "presentation", "powerpoint", "zip"):
         return {"is_supported": True, "status": "accepted_for_format_validation"}
         
@@ -70,7 +72,7 @@ def validate_format(file_path, file_type):
                     raise ValueError("Not a PDF")
                 if doc.needs_pass:
                     return {"is_valid": False, "status": "password_required"}
-                if doc.page_count > 100: # <-- حد 100 صفحة
+                if doc.page_count > 100:
                     return {"is_valid": False, "status": "too_many_pages"}
                 for page_number in range(doc.page_count):
                     page = doc.load_page(page_number)
@@ -159,38 +161,69 @@ def extract_content(file_path, file_type):
             "pages": pages
         }
 
-    # ---------- DOCX (مع رقم الصفحة = 1 مؤقتاً) ----------
+    # ---------- DOCX (مع Markdown للجداول) ----------
     elif file_type == "docx":
         document = Document(str(path))
         text_parts = []
+        
         for item in document.iter_inner_content():
             if hasattr(item, "rows"):
+                # تحويل الجدول إلى Markdown
+                table_md = []
                 for row in item.rows:
-                    cells = [cell.text for cell in row.cells]
-                    text_parts.append(" | ".join(cells))
+                    cells = [cell.text.strip() for cell in row.cells]
+                    table_md.append("| " + " | ".join(cells) + " |")
+                # إضافة صف الفواصل بعد العنوان (إذا حبيتي)
+                if table_md:
+                    header_sep = "|" + "|".join(["---"] * len(item.rows[0].cells)) + "|"
+                    table_md.insert(1, header_sep)
+                text_parts.append("\n".join(table_md))
             else:
                 text_parts.append(item.text)
 
+        full_text = "\n".join(text_parts)
         return {
             "status": "extracted",
-            "original_text": "\n".join(text_parts),
-            "pages": [{"page_number": 1, "text": "\n".join(text_parts)}]
+            "original_text": full_text,
+            "pages": [{"page_number": 1, "text": full_text}]
         }
 
-    # ---------- PPTX (مع رقم الشريحة) ----------
+    # ---------- PPTX (مع OCR للصور) ----------
     elif file_type == "pptx":
         prs = Presentation(str(path))
         slides_data = []
         all_text = []
+        
         for slide_num, slide in enumerate(prs.slides, start=1):
             slide_texts = []
+            
             for shape in slide.shapes:
+                # 1. نص عادي
                 if hasattr(shape, "text") and shape.text.strip():
                     slide_texts.append(shape.text.strip())
+                
+                # 2. صورة (OCR)
+                elif shape.shape_type == 13: # PICTURE
+                    try:
+                        image = shape.image
+                        image_bytes = image.blob
+                        temp_path = f"temp_{uuid.uuid4()}.png"
+                        
+                        with open(temp_path, "wb") as f:
+                            f.write(image_bytes)
+                        
+                        ocr_text = pytesseract.image_to_string(Image.open(temp_path), lang='ara+eng')
+                        if ocr_text.strip():
+                            slide_texts.append(f"[صورة]: {ocr_text.strip()}")
+                        
+                        os.remove(temp_path)
+                    except Exception as e:
+                        print(f"OCR Error: {e}")
+            
             slide_full_text = "\n".join(slide_texts)
             if slide_full_text:
                 slides_data.append({
-                    "page_number": slide_num, # <-- رقم الشريحة
+                    "page_number": slide_num,
                     "text": slide_full_text
                 })
                 all_text.append(f"--- Slide {slide_num} ---\n{slide_full_text}")
@@ -246,13 +279,21 @@ def extract_content(file_path, file_type):
             "pages": sheets
         }
 
-    # ---------- PNG / JPEG ----------
+    # ---------- PNG / JPEG (OCR للصورة) ----------
     elif file_type in ("png", "jpeg"):
-        with Image.open(path) as image:
+        try:
+            ocr_text = pytesseract.image_to_string(Image.open(path), lang='ara+eng')
+            return {
+                "status": "extracted",
+                "original_text": ocr_text.strip(),
+                "pages": [{"page_number": 1, "text": ocr_text.strip()}]
+            }
+        except Exception as e:
             return {
                 "status": "no_text_extraction_without_ocr",
                 "original_text": None,
-                "pages": []
+                "pages": [],
+                "error": str(e)
             }
 
     else:
