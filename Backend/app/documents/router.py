@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 import shutil
 import os
 import uuid
+import logging
 
 from app.database import get_department_db
 from app.documents.models import Document, DocumentAuditLog, DocumentVersion, DocumentRevisionLog, DocumentChunk
@@ -12,6 +13,8 @@ from app.documents import rag_service
 from app.auth.dependencies import get_current_user
 from app.models import User
 from app.services.authorization import has_permission
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -46,13 +49,24 @@ async def upload_document(
     try:
         result = process_file(temp_path)
     except Exception as e:
-        os.remove(temp_path)
-        raise HTTPException(status_code=400, detail=f"File processing error: {str(e)}")
+        # ✅ نسجل الخطأ داخلياً (في الـ Logs) بدون كشفه للمستخدم
+        logger.exception("Upload Error while processing file %s: %s", temp_path, e)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(
+            status_code=400,
+            detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف."
+        )
 
     if result["status"] != "accepted":
         os.remove(temp_path)
         reason = result.get("reason", "unknown")
-        raise HTTPException(status_code=400, detail=f"File rejected: {reason}")
+        # ✅ نسجل السبب داخلياً، ونرجع رسالة عامة للمستخدم
+        logger.warning("File rejected: %s (file=%s)", reason, file.filename)
+        raise HTTPException(
+            status_code=400,
+            detail="الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف."
+        )
 
     safe_filename = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
@@ -218,7 +232,21 @@ async def list_documents(
         raise HTTPException(status_code=403, detail="Permission denied")
     
     documents = db.query(Document).filter(Document.department_id == department_id).all()
-    return {"count": len(documents), "documents": documents}
+    
+    # ✅ نرجع بيانات آمنة (DTO) بدون file_path أو extracted_text
+    safe_documents = [
+        {
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_type": doc.file_type,
+            "status": doc.status,
+            "version": doc.version,
+            "upload_date": doc.upload_date
+        }
+        for doc in documents
+    ]
+    
+    return {"count": len(safe_documents), "documents": safe_documents}
 
 @router.get("/download/{document_id}")
 async def download_document(
