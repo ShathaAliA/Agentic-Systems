@@ -83,7 +83,6 @@ def test_get_document_returns_metadata_only(fresh_db):
 
     with Session(engine) as db:
         doc = _create_approved_doc(db)
-        # محاكاة استجابة get_document
         response = {
             "id": doc.id,
             "filename": doc.filename,
@@ -110,7 +109,6 @@ def test_patch_updates_filename_and_audits(fresh_db):
     with Session(engine) as db:
         doc = _create_approved_doc(db)
 
-        # محاكاة PATCH
         doc.filename = "renamed.pdf"
         db.add(DocumentAuditLog(
             document_id=doc.id,
@@ -144,7 +142,6 @@ def test_replace_creates_new_version_keeps_old_chunks(fresh_db):
     with Session(engine) as db:
         doc = _create_approved_doc(db)
 
-        # V1 chunks
         for i in range(3):
             db.add(DocumentChunk(
                 document_id=doc.id,
@@ -155,7 +152,6 @@ def test_replace_creates_new_version_keeps_old_chunks(fresh_db):
             ))
         db.commit()
 
-        # محاكاة replace
         old_version = doc.version
         new_version = old_version + 1
         doc.version = new_version
@@ -184,7 +180,6 @@ def test_replace_creates_new_version_keeps_old_chunks(fresh_db):
         ))
         db.commit()
 
-        # V1 chunks must still exist
         v1_count = db.query(DocumentChunk).filter(
             DocumentChunk.document_id == doc.id,
             DocumentChunk.version_number == 1,
@@ -211,7 +206,6 @@ def test_add_list_delete_audience(fresh_db):
     with Session(engine) as db:
         doc = _create_approved_doc(db)
 
-        # Add
         audience = DocumentAudience(
             document_id=doc.id,
             department_id="hr",
@@ -224,7 +218,6 @@ def test_add_list_delete_audience(fresh_db):
 
         assert audience.id is not None
 
-        # List
         audiences = db.query(DocumentAudience).filter(
             DocumentAudience.document_id == doc.id
         ).all()
@@ -232,7 +225,6 @@ def test_add_list_delete_audience(fresh_db):
         assert audiences[0].department_id == "hr"
         assert audiences[0].role_id == "manager"
 
-        # Delete
         db.delete(audience)
         db.commit()
 
