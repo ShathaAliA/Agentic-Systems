@@ -11,6 +11,7 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
 - [Subtask 2.3: central users, memberships and approved roles](Backend/docs/users.md)
 - [Independent task U1: question credits, usage and company budget](Backend/docs/usage.md)
+- [Internal U1 question adapter and integration callbacks](Backend/docs/u1-question-adapter.md)
 - [Core backend roadmap and task status](Backend/docs/core-roadmap.md)
 
 Authentication is disabled by default. Subtask 2.1 adds development-only password

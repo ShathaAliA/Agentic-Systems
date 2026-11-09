@@ -1,5 +1,10 @@
 # Independent task U1: question credits, usage and company budget
 
+The [internal question adapter contract](u1-question-adapter.md) adds a reusable
+RBAC-checked boundary around this foundation. It does not mount a question route
+or store answers; connecting documents-ai and its authorized result store remains
+joint integration work.
+
 Tracking correction: this work was originally labeled Subtask 2.4. It is now U1;
 the original 2.4 is Roles & Permissions APIs. Code, migration `usage001` and the
 six existing local commits retain their technical identities; history is not rewritten.
