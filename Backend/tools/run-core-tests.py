@@ -10,7 +10,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation")
+GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract")
 
 
 def clean_environment(source):
@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--pwsh", default="pwsh")
     parser.add_argument("--postgres-bin", default=r"C:\Program Files\PostgreSQL\18\bin")
     parser.add_argument("--docker", default="docker")
-    parser.add_argument("--image", default="ai-platform-day2:dev")
+    parser.add_argument("--image", default="ai-platform-core:test")
     return run(parser.parse_args())
 
 

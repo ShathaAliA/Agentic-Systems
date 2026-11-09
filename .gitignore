@@ -1,43 +1,48 @@
-# Environment variables
+# Environment variables; only non-secret templates may be tracked.
 .env
 .env.*
 !.env.example
 !.env.*.example
 
-# Python virtual environments
+# Python virtual environments and caches
 .venv/
 venv/
-
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 
-# IDE and Local Storage
-.vscode/
+# Private local state, editor settings and generated application data
 .local/
+.vscode/
 node_modules/
 chroma_db/
 uploads/
 storage/
 
-# Logs and Backups
+# Logs and recovery artifacts
 *.log
 *.dump
 *.backup
 
-# أدوات التشخيص المؤقتة
-check_db.py
-enable_vector.py
-check_departments.py
-add_department.py
-add_user.py
-grant_admin.py
-central_migration.json
+# PoC scripts — local state only; shared scripts are tracked
+scripts/.poc_state.json
+scripts/test_router_isolated.py
+scripts/test_tenant_migration.py
 
-create_tables.py
-check_hr_schema.py
-check_tables.py
-create_hr_tables.py
-create_hr_tables_direct.py
+# Test samples are regenerable
+tests/samples/
+
+
+# Legacy local diagnostic scripts (not tracked)
+Backend/add_department.py
+Backend/add_user.py
+Backend/check_db.py
+Backend/check_departments.py
+Backend/check_hr_schema.py
+Backend/check_tables.py
+Backend/create_hr_tables.py
+Backend/create_hr_tables_direct.py
+Backend/create_tables.py
+Backend/enable_vector.py
+Backend/grant_admin.py

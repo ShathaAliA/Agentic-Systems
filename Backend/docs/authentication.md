@@ -133,7 +133,7 @@ python -m pytest -q -m "not integration" --tb=short
 From the repository root, with Docker and PowerShell 7.2+:
 
 ```powershell
-docker build -t ai-platform-day2:dev Backend
+docker build --target test -t ai-platform-core:test Backend
 ./Backend/tools/test-auth-postgres.ps1
 ```
 

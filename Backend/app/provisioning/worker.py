@@ -92,13 +92,14 @@ class Worker:
                 job = Job(department_id, registry.database_name, registry.credential_key, registry.claim_token, registry.attempt_count)
             try:
                 if not self.migrator.available:
-                    raise ProvisioningError("tenant_contract_unavailable")
+                    raise ProvisioningError(self.migrator.error_code)
+                grants = self.migrator.runtime_privileges()
                 owner, runtime = identities(job.database, job.credential_key)
                 credentials = self.secrets.ensure(job.credential_key, runtime)
                 self.postgres.ensure_resources(job.database, owner, credentials, job.department_id)
                 revision = self.migrator.migrate(self.postgres.migration_url(job.database), owner, job.department_id)
-                self.postgres.grant_runtime(job.database, owner, credentials)
-                self.postgres.verify(job.database, owner, credentials, job.department_id, revision, self.migrator.required_tables)
+                self.postgres.grant_runtime(job.database, owner, credentials, **grants)
+                self.postgres.verify(job.database, owner, credentials, job.department_id, revision, self.migrator.required_tables, **grants)
             except Exception as exc:
                 # Never persist raw DB/DSN/secret-bearing exception strings.
                 code = exc.code if isinstance(exc, ProvisioningError) else "infrastructure_error"
