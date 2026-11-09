@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 import shutil
 import os
 import uuid
+import hashlib
 import logging
 
 from app.database import get_central_db
@@ -34,7 +35,6 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# رسائل آمنة لمستخدم عند رفض الملف (لا تكشف تفاصيل داخلية)
 REJECTION_MESSAGES = {
     "unsupported_file_type": "نوع الملف غير مدعوم.",
     "extension_mismatch": "امتداد الملف لا يطابق محتواه. يرجى التأكد من الملف.",
@@ -170,7 +170,6 @@ async def upload_document(
             ))
             db.commit()
 
-            # ✅ PR5: تمرير pages للحفاظ على المواقع الحقيقية
             chunks = rag_service.chunk_text(extracted_text)
             if chunks:
                 rag_service.process_and_store_chunks(
@@ -296,7 +295,6 @@ async def revise_document(
 
             new_chunks = rag_service.chunk_text(new_text)
             if new_chunks:
-                # revise لا يملك pages — نمرر None (fallback إلى page 1)
                 rag_service.process_and_store_chunks(
                     db,
                     doc.id,
@@ -326,94 +324,155 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask (with request_key + U1 placeholder)
+# Ask (with U1 idempotency)
 # ------------------------------------------------------------------
 @router.post("/ask")
 async def ask_question(
     query: str,
     department_id: str,
-    request_key: str | None = None,
+    request_key: str,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # TODO(integration): U1 idempotency
-    # When U1 interface is available, wrap this call with:
-    #   reservation = u1.reserve(user_id=current_user.id,
-    #                            request_key=request_key,
-    #                            department_id=department_id)
-    #   try:
-    #       ... existing logic ...
-    #       u1.commit(reservation, outcome="answered" | "no_answer")
-    #   except TechnicalError:
-    #       u1.refund(reservation)
-    # The client MUST send the same request_key on retries to prevent
-    # duplicate charges. request_key=None means legacy behavior (no billing).
-    # The client NEVER sends tokens/cost; U1 computes them internally.
+    fingerprint = hashlib.sha256(
+        f"{query}|{department_id}".encode("utf-8")
+    ).hexdigest()
 
     user_depts, user_roles = get_user_context(central_db, current_user.id)
 
+    from app.usage.integration import run_once, AccountingContext, ProviderReceipt
+    from app.usage import service as usage_service
+    from app.database import engine as central_engine
+
+    def processor(ctx: AccountingContext) -> str:
+        try:
+            with _open_department_session(
+                user_id=current_user.id,
+                department_id=department_id,
+                permission_code="documents:read",
+            ) as db:
+                context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+                if not context_chunks:
+                    return "no_answer"
+
+                allowed_chunks = []
+                for c in context_chunks:
+                    doc_id = c.get("document_id")
+                    if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
+                        allowed_chunks.append(c)
+
+                if not allowed_chunks:
+                    return "no_answer"
+
+                context = "\n\n".join([c["content"] for c in allowed_chunks])
+
+                provider = rag_service.PROVIDER
+                model = "gpt-4o-mini" if provider == "openai" else "gemini-3.8-flash"
+                attempt_key = f"ask:{request_key}"
+
+                def callback(attempt_id):
+                    try:
+                        answer = rag_service.generate_answer(query, context)
+                        return ProviderReceipt(
+                            key=f"receipt:{attempt_id}",
+                            cost_micro_usd=1000,
+                            input_tokens=len(context.split()),
+                            output_tokens=len(answer.split()),
+                        )
+                    except Exception as e:
+                        logger.exception("LLM provider failed: %s", e)
+                        raise
+
+                ctx.perform(attempt_key, provider, model, 1000, callback)
+                return "answered"
+        except Exception as e:
+            logger.exception("Processor error: %s", e)
+            raise
+
     try:
-        with _open_department_session(
+        result = run_once(
+            engine=central_engine,
             user_id=current_user.id,
-            department_id=department_id,
-            permission_code="documents:read",
-        ) as db:
-            context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
-            if not context_chunks:
-                return {
-                    "query": query,
-                    "answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات.",
-                    "sources": [],
-                    "request_key": request_key,
-                }
+            request_key=request_key,
+            fingerprint=fingerprint,
+            estimated_micro_usd=1000,
+            processor=processor,
+        )
+    except usage_service.UsageError as e:
+        raise HTTPException(status_code=e.status, detail=e.code)
+    except Exception as e:
+        logger.exception("U1 error: %s", e)
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
-            allowed_chunks = []
-            for c in context_chunks:
-                doc_id = c.get("document_id")
-                if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
-                    allowed_chunks.append(c)
-
-            if not allowed_chunks:
-                return {
-                    "query": query,
-                    "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
-                    "sources": [],
-                    "request_key": request_key,
-                }
-
-            context = "\n\n".join([c["content"] for c in allowed_chunks])
-            try:
-                answer = rag_service.generate_answer(query, context)
-            except Exception as e:
-                logger.exception("Provider error: %s", e)
-                raise HTTPException(
-                    status_code=502,
-                    detail="تعذر الحصول على إجابة من المزود. يرجى المحاولة لاحقاً.",
-                )
-
+    if result.state == "completed":
+        if result.outcome == "answered":
+            return _build_answer_response(
+                query, request_key, department_id, current_user.id, user_depts, user_roles
+            )
+        elif result.outcome == "no_answer":
             return {
                 "query": query,
-                "answer": answer,
-                "sources": [
-                    {
-                        "document": c["document_name"],
-                        "chunk_id": c["chunk_id"],
-                        "version": c.get("version"),
-                        "version_number": c.get("version_number"),
-                        "location": c.get("page_number"),
-                    }
-                    for c in allowed_chunks
-                ],
+                "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
+                "sources": [],
                 "request_key": request_key,
+                "replayed": result.replayed,
             }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Ask error: %s", e)
-        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+    elif result.state == "refunded":
+        return {
+            "query": query,
+            "answer": "تعذر إكمال الطلب. تم إرجاع الرصيد.",
+            "sources": [],
+            "request_key": request_key,
+            "replayed": result.replayed,
+        }
+
+    raise HTTPException(
+        status_code=409,
+        detail=f"الطلب قيد المعالجة (state={result.state}). يرجى إعادة المحاولة.",
+    )
+
+
+def _build_answer_response(query, request_key, department_id, user_id, user_depts, user_roles):
+    with _open_department_session(
+        user_id=user_id,
+        department_id=department_id,
+        permission_code="documents:read",
+    ) as db:
+        context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+        allowed = [
+            c for c in context_chunks
+            if c.get("document_id") is None
+            or user_can_access_document(db, c["document_id"], user_depts, user_roles)
+        ]
+        if not allowed:
+            return {
+                "query": query,
+                "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
+                "sources": [],
+                "request_key": request_key,
+                "replayed": True,
+            }
+        context = "\n\n".join([c["content"] for c in allowed])
+        answer = rag_service.generate_answer(query, context)
+        return {
+            "query": query,
+            "answer": answer,
+            "sources": [
+                {
+                    "document": c["document_name"],
+                    "chunk_id": c["chunk_id"],
+                    "version": c.get("version"),
+                    "version_number": c.get("version_number"),
+                    "location": c.get("page_number"),
+                }
+                for c in allowed
+            ],
+            "request_key": request_key,
+            "replayed": True,
+        }
 
 
 # ------------------------------------------------------------------
@@ -549,7 +608,7 @@ async def delete_document(
 
 
 # ------------------------------------------------------------------
-# B2: Get document metadata
+# B2: Get metadata
 # ------------------------------------------------------------------
 @router.get("/{document_id}")
 async def get_document(
@@ -575,7 +634,6 @@ async def get_document(
             ).first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
-
             if not user_can_access_document(db, doc.id, user_depts, user_roles):
                 raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -595,7 +653,7 @@ async def get_document(
 
 
 # ------------------------------------------------------------------
-# B2: Update document metadata
+# B2: PATCH metadata
 # ------------------------------------------------------------------
 @router.patch("/{document_id}")
 async def update_document_metadata(
@@ -633,7 +691,6 @@ async def update_document_metadata(
                 version_number=doc.version,
             ))
             db.commit()
-
             return {
                 "status": "success",
                 "message": "تم تحديث بيانات المستند.",
@@ -681,10 +738,7 @@ async def replace_document_version(
         logger.exception("Replace error processing file %s: %s", temp_path, e)
         if os.path.exists(temp_path):
             os.remove(temp_path)
-        raise HTTPException(
-            status_code=400,
-            detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.",
-        )
+        raise HTTPException(status_code=400, detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.")
 
     if result["status"] != "accepted":
         if os.path.exists(temp_path):
@@ -717,7 +771,6 @@ async def replace_document_version(
 
             old_version = doc.version
             new_version_number = old_version + 1
-
             extracted_text = result["extraction"].get("original_text", "") or ""
 
             db.add(DocumentRevisionLog(
@@ -744,9 +797,7 @@ async def replace_document_version(
             new_chunks = rag_service.chunk_text(extracted_text)
             if new_chunks:
                 rag_service.process_and_store_chunks(
-                    db,
-                    doc.id,
-                    new_chunks,
+                    db, doc.id, new_chunks,
                     version_number=new_version_number,
                     pages=result["extraction"].get("pages"),
                 )
@@ -772,7 +823,7 @@ async def replace_document_version(
 
 
 # ------------------------------------------------------------------
-# B2: Manage audiences
+# B2: Audiences
 # ------------------------------------------------------------------
 @router.post("/{document_id}/permissions")
 async def add_document_audience(
@@ -789,7 +840,7 @@ async def add_document_audience(
     if audience_department_id is None and audience_role_id is None:
         raise HTTPException(
             status_code=400,
-            detail="يجب تحديد قسم أو دور (أو كلاهما).",
+            detail="حدد قسماً أو دوراً (أو كلاهما). لاستخدام (NULL,NULL) استخدم endpoint منفصل.",
         )
 
     try:
@@ -829,7 +880,6 @@ async def add_document_audience(
             ))
             db.commit()
             db.refresh(audience)
-
             return {"status": "success", "audience_id": audience.id}
     except HTTPException:
         raise
@@ -918,7 +968,6 @@ async def delete_document_audience(
                 version_number=None,
             ))
             db.commit()
-
             return {"status": "success", "message": "تم حذف الجمهور."}
     except HTTPException:
         raise
