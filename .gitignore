@@ -46,3 +46,15 @@ Backend/create_hr_tables_direct.py
 Backend/create_tables.py
 Backend/enable_vector.py
 Backend/grant_admin.py
+# Local diagnostic scripts (legacy)
+Backend/add_department.py
+Backend/add_user.py
+Backend/check_db.py
+Backend/check_departments.py
+Backend/check_hr_schema.py
+Backend/check_tables.py
+Backend/create_hr_tables.py
+Backend/create_hr_tables_direct.py
+Backend/create_tables.py
+Backend/enable_vector.py
+Backend/grant_admin.py
