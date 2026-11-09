@@ -326,17 +326,32 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask
+# Ask (with request_key + U1 placeholder)
 # ------------------------------------------------------------------
 @router.post("/ask")
 async def ask_question(
     query: str,
     department_id: str,
+    request_key: str | None = None,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
+
+    # TODO(integration): U1 idempotency
+    # When U1 interface is available, wrap this call with:
+    #   reservation = u1.reserve(user_id=current_user.id,
+    #                            request_key=request_key,
+    #                            department_id=department_id)
+    #   try:
+    #       ... existing logic ...
+    #       u1.commit(reservation, outcome="answered" | "no_answer")
+    #   except TechnicalError:
+    #       u1.refund(reservation)
+    # The client MUST send the same request_key on retries to prevent
+    # duplicate charges. request_key=None means legacy behavior (no billing).
+    # The client NEVER sends tokens/cost; U1 computes them internally.
 
     user_depts, user_roles = get_user_context(central_db, current_user.id)
 
@@ -348,7 +363,12 @@ async def ask_question(
         ) as db:
             context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
             if not context_chunks:
-                return {"answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات."}
+                return {
+                    "query": query,
+                    "answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات.",
+                    "sources": [],
+                    "request_key": request_key,
+                }
 
             allowed_chunks = []
             for c in context_chunks:
@@ -357,7 +377,12 @@ async def ask_question(
                     allowed_chunks.append(c)
 
             if not allowed_chunks:
-                return {"answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها."}
+                return {
+                    "query": query,
+                    "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
+                    "sources": [],
+                    "request_key": request_key,
+                }
 
             context = "\n\n".join([c["content"] for c in allowed_chunks])
             try:
@@ -382,6 +407,7 @@ async def ask_question(
                     }
                     for c in allowed_chunks
                 ],
+                "request_key": request_key,
             }
     except HTTPException:
         raise
@@ -521,6 +547,7 @@ async def delete_document(
         logger.exception("Delete error: %s", e)
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
+
 # ------------------------------------------------------------------
 # B2: Get document metadata
 # ------------------------------------------------------------------
@@ -559,7 +586,6 @@ async def get_document(
                 "status": doc.status,
                 "version": doc.version,
                 "upload_date": doc.upload_date,
-                # لا نكشف file_path أو extracted_text
             }
     except HTTPException:
         raise
@@ -635,7 +661,6 @@ async def replace_document_version(
     if not has_permission(central_db, current_user.id, "documents:update", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # حجم الملف
     MAX_SIZE = 20 * 1024 * 1024
     file.file.seek(0, 2)
     file_size = file.file.tell()
@@ -747,7 +772,7 @@ async def replace_document_version(
 
 
 # ------------------------------------------------------------------
-# B2: Manage audiences (list + add + delete)
+# B2: Manage audiences
 # ------------------------------------------------------------------
 @router.post("/{document_id}/permissions")
 async def add_document_audience(
