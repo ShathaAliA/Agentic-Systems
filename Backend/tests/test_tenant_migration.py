@@ -1,10 +1,10 @@
 """B1 — Tenant migration contract test.
 
-Verifies that `tenant_0002_documents_tables` produces the required schema
+Verifies that `tenant_0002..tenant_0006` produce the required schema
 on a fresh isolated database, without touching HR/Finance/Legal.
 
 Run:
-    pytest tests/test_tenant_migration.py -v
+    pytest tests/test_tenant_migration.py -v --isolated-postgres
 
 This test is marked `integration` — requires `--isolated-postgres`
 to run, per conftest.py.
@@ -16,7 +16,6 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 
 
 pytestmark = pytest.mark.integration
@@ -29,7 +28,7 @@ ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
 
 @pytest.fixture(scope="module")
 def fresh_db():
-    """Create a fresh dept_<hex> database, migrate to tenant_0002, drop at end."""
+    """Create a fresh dept_<hex> database, migrate to head, drop at end."""
     hex_ = uuid.uuid4().hex
     db_name = f"dept_{hex_}"
 
@@ -156,7 +155,9 @@ def test_contract_matches_schema(fresh_db):
 
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
 
-    assert contract["required_revision"] == "tenant_0002"
+    assert contract["contract_version"] == 1, "contract_version must be int 1"
+    assert contract["required_revision"] == "tenant_0006"
+    assert contract["ready"] is False
     assert "_provisioning_identity" in contract["required_tables"]
     assert set(contract["required_tables"]).issubset({
         "_provisioning_identity",
@@ -165,4 +166,10 @@ def test_contract_matches_schema(fresh_db):
         "document_revision_logs",
         "document_audit_logs",
         "document_chunks",
+        "document_audiences",
     })
+    # table_privileges / sequence_privileges present
+    assert "table_privileges" in contract
+    assert "sequence_privileges" in contract
+    assert "documents" in contract["table_privileges"]
+    assert "document_audiences" in contract["table_privileges"]
