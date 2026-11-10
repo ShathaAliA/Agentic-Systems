@@ -1,19 +1,24 @@
-# System Dependencies
+# System dependencies
 
-## Required
-- **PostgreSQL 16 + pgvector** (Docker: `pgvector/pgvector:pg16`)
-- **Python 3.12+** (with venv)
-- **All packages** from `requirements.txt`
+- Python 3.13 (the tested Core/runtime target).
+- PostgreSQL 17+ with pgvector for the full tenant document schema.
+- Install requirements-test.txt for verification; it includes requirements.txt.
+- Arabic scanned PDF/image support requires Tesseract and the ara language pack.
+  OCR availability is required for that acceptance path, not an optional success
+  with empty extracted text. OCR quality has not been certified by the sync fixes.
 
-## Optional (OCR only)
-- **Tesseract OCR** — required for image/PDF-scanned text extraction.
-  - Windows: https://github.com/UB-Mannheim/tesseract/wiki
-  - Add `tesseract.exe` to PATH.
-  - **Without it:** image/PDF-scanned files are accepted but return empty text
-    (no crash). Arabic OCR requires `tesseract-ocr-ara` language pack.
+pgvector is an untrusted extension. A separate DBA/bootstrap identity must install
+it in each NEW tenant database before owner-scoped migrations; never grant the API
+or regular provisioning worker superuser access. The full-schema synthetic worker
+CI test demonstrates this split. Do not apply it to HR/Finance or activate Legal.
 
-### Verify Tesseract:
+The legacy Backend/scripts PoC setup/E2E/generator were removed. The approved PoC
+branch is deferred; no PoC commands are part of this synchronization check.
+
 ```powershell
-where.exe tesseract
 tesseract --version
-tesseract --list-langs   # should include 'ara' for Arabic
+tesseract --list-langs
+```
+
+For paid questions, configure reviewed OpenAI model prices and bounded usage as
+specified in sync-blocker-verification.md. Missing configuration fails closed.

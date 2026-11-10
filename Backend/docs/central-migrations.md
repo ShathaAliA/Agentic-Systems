@@ -1,10 +1,12 @@
-# Central Migrations Reconciliation
+# Central migration history
 
-## Status
-- Central Alembic revisions (from `feature/core-backend`):
-  - `tenant_0001_documents_tables` → **removed** (legacy, was in old documents-ai)
-  - Replaced by `c001` … `usage001` (Core central schema: users, departments, RBAC, usage)
-  - `p001_provisioning_attempts`, `p002_verified_contract` (registry)
+The current single central head is `usage003_merge`. It joins the published
+`usage002_result_payload` branch with Core `rbac001` without rewriting either
+revision or deleting existing data. The legacy nullable result_payload column
+is not mapped or written by runtime code. No old answers are copied or purged.
+New results belong only in tenant `question_results` (tenant_0007).
 
-## Verified
-- Fresh central DB created (`wadi_db_test`) and upgraded to `head`:
+Do not downgrade or apply this to the existing development cluster automatically.
+Use the separate migration identity and the fresh-cluster Core runner first.
+No API identity receives DDL, CREATEDB, CREATEROLE or SUPERUSER.
+See sync-blocker-verification.md for actual executed checks and remaining gates.

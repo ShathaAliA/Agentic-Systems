@@ -1,3 +1,5 @@
+> Historical implementation notes. Current status and mandatory gates: [sync-blocker-verification.md](sync-blocker-verification.md).
+
 # P1 Notes
 
 ## 1) Audience: (NULL, NULL)
