@@ -58,3 +58,4 @@ Backend/create_hr_tables_direct.py
 Backend/create_tables.py
 Backend/enable_vector.py
 Backend/grant_admin.py
+.credentials/
