@@ -16,6 +16,18 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
+@pytest.mark.parametrize("target", ["document_results", "documents", "document_provisioning"])
+def test_document_fixture_graph_resolves_without_infrastructure(target):
+    environment = runner.clean_environment(os.environ)
+    environment["RUN_AUTH_POSTGRES_TESTS"] = "1"
+    # --setup-plan resolves the actual fixture graph but executes no fixture or SQL.
+    result = subprocess.run([sys.executable, "-m", "pytest",
+        f"Backend/tests/test_{target}_postgres.py", "--isolated-postgres", "--setup-plan",
+        "-q", "-p", "no:cacheprovider"], cwd=ROOT, env=environment,
+        capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("cwd", [ROOT, ROOT / "Backend"])
 def test_default_collection_uses_safe_suite_from_either_directory(cwd):
     result = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],

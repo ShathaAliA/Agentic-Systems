@@ -5,8 +5,7 @@ from psycopg import sql
 from types import SimpleNamespace
 
 
-@pytest.fixture
-def fake_embeddings(monkeypatch):
+def install_fake_embeddings(monkeypatch):
     from app.documents import rag_service
     # These cases assert storage/version/location behavior, not retrieval quality.
     # No model download/provider traffic in an isolated internal Docker network.
@@ -16,7 +15,8 @@ def fake_embeddings(monkeypatch):
 
 
 @pytest.fixture
-def fresh_db(isolated_postgres, fake_embeddings):
+def fresh_db(isolated_postgres, monkeypatch):
+    install_fake_embeddings(monkeypatch)
     bootstrap, _, _ = isolated_postgres
     name = "dept_" + uuid.uuid4().hex
     with bootstrap.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
