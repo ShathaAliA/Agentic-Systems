@@ -1,6 +1,11 @@
-from app.models import Base
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, func
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, func, JSON
 from pgvector.sqlalchemy import Vector
+
+
+class Base(DeclarativeBase):
+    """Tenant-only metadata; never included in central Base.create_all/autogenerate."""
+    pass
 
 
 class Document(Base):
@@ -11,7 +16,7 @@ class Document(Base):
     file_path = Column(String, nullable=False)
     file_type = Column(String, nullable=True)
     extracted_text = Column(Text, nullable=True)
-    department_id = Column(String(50), nullable=True)
+    department_id = Column(String(36), nullable=True)
     status = Column(String(20), default="pending_review")
     version = Column(Integer, default=1)
     upload_date = Column(DateTime(timezone=True), server_default=func.now())
@@ -71,3 +76,12 @@ class DocumentAudience(Base):
     role_id = Column(String(36), nullable=True)         # NULL = all roles
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     created_by = Column(String(36), nullable=False)
+
+
+class QuestionResult(Base):
+    __tablename__ = "question_results"
+
+    request_id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

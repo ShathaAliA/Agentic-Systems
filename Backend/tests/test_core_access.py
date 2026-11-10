@@ -38,7 +38,7 @@ def test_every_api_operation_has_an_explicit_access_contract():
     assert len(expected) == len(OPERATIONS), "Duplicate API policy entries"
     assert actual == expected, f"Unreviewed/missing API policies: {actual ^ expected}"
     assert {r.path for r in effective_routes(app) if not isinstance(getattr(r, "original_route", r), APIRoute)} == TOOLING
-    assert all(op.policy in {"public", "login", "self", "core_admin", "department_admin"} for op in OPERATIONS)
+    assert all(op.policy in {"public", "login", "self", "core_admin", "department_admin", "document"} for op in OPERATIONS)
     for op in PROTECTED:
         route = next(r for r in api_routes if r.path == op.path and op.method in r.methods)
         assert get_auth_context in set(dependency_calls(route.dependant)), (op.method, op.path)

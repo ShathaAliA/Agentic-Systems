@@ -51,13 +51,29 @@ def filter_visible_documents(
     ]
 
 
-def get_user_context(db_central, user_id: str) -> tuple[list[str], list[str]]:
+def get_user_context(db_central, user_id: str, department_id: str | None = None) -> tuple[list[str], list[str]]:
     """Return (department_ids, role_ids) for the user from the CENTRAL database."""
-    from app.models import DepartmentMembership, RoleAssignment
+    from app.models import DepartmentMembership, RoleAssignment, Role
+    from sqlalchemy import or_, and_
+    from app.services.authorization import has_permission
+
+    if department_id is not None:
+        if not has_permission(db_central, user_id, "documents:read", department_id):
+            return [], []
+        roles = db_central.scalars(select(RoleAssignment.role_id).join(Role).where(
+            RoleAssignment.user_id == user_id,
+            or_(and_(Role.scope == "global", RoleAssignment.department_id.is_(None)),
+                and_(Role.scope == "department", RoleAssignment.department_id == department_id,
+                    select(DepartmentMembership.id).where(
+                        DepartmentMembership.user_id == user_id,
+                        DepartmentMembership.department_id == department_id,
+                        DepartmentMembership.status == "active").exists())))).all()
+        return [department_id], list(roles)
 
     depts = db_central.execute(
         select(DepartmentMembership.department_id).where(
-            DepartmentMembership.user_id == user_id
+            DepartmentMembership.user_id == user_id,
+            DepartmentMembership.status == "active",
         )
     ).scalars().all()
 

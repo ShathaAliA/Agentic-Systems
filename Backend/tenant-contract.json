@@ -1,1 +1,77 @@
-{"contract_version":1,"ready":false,"required_revision":"tenant_0006","required_tables":["documents","document_versions","document_revision_logs","document_audit_logs","document_chunks","document_audiences","_provisioning_identity"],"table_privileges":{"documents":["SELECT","INSERT","UPDATE"],"document_versions":["SELECT","INSERT","UPDATE"],"document_revision_logs":["SELECT","INSERT"],"document_audit_logs":["SELECT","INSERT"],"document_chunks":["SELECT","INSERT","UPDATE","DELETE"],"document_audiences":["SELECT","INSERT","UPDATE","DELETE"]},"sequence_privileges":{"document_versions_id_seq":["USAGE","SELECT"],"document_revision_logs_id_seq":["USAGE","SELECT"],"document_audit_logs_id_seq":["USAGE","SELECT"],"document_chunks_id_seq":["USAGE","SELECT"],"document_audiences_id_seq":["USAGE","SELECT"]}}
+{
+  "contract_version": 1,
+  "ready": false,
+  "required_revision": "tenant_0007",
+  "required_tables": [
+    "documents",
+    "document_versions",
+    "document_revision_logs",
+    "document_audit_logs",
+    "document_chunks",
+    "document_audiences",
+    "_provisioning_identity",
+    "question_results"
+  ],
+  "table_privileges": {
+    "documents": [
+      "SELECT",
+      "INSERT",
+      "UPDATE"
+    ],
+    "document_versions": [
+      "SELECT",
+      "INSERT",
+      "UPDATE"
+    ],
+    "document_revision_logs": [
+      "SELECT",
+      "INSERT"
+    ],
+    "document_audit_logs": [
+      "SELECT",
+      "INSERT"
+    ],
+    "document_chunks": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE"
+    ],
+    "document_audiences": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE"
+    ],
+    "question_results": [
+      "SELECT",
+      "INSERT"
+    ]
+  },
+  "sequence_privileges": {
+    "document_versions_id_seq": [
+      "USAGE",
+      "SELECT"
+    ],
+    "document_revision_logs_id_seq": [
+      "USAGE",
+      "SELECT"
+    ],
+    "document_audit_logs_id_seq": [
+      "USAGE",
+      "SELECT"
+    ],
+    "document_chunks_id_seq": [
+      "USAGE",
+      "SELECT"
+    ],
+    "document_audiences_id_seq": [
+      "USAGE",
+      "SELECT"
+    ],
+    "documents_id_seq": [
+      "USAGE",
+      "SELECT"
+    ]
+  }
+}
