@@ -1,0 +1,7 @@
+﻿# PoC scripts — only local state and legacy scripts are ignored
+scripts/.poc_state.json
+scripts/test_router_isolated.py
+scripts/test_tenant_migration.py
+
+scripts/.poc_state.json
+tests/samples/

@@ -1,0 +1,19 @@
+{
+  "accepted": {
+    "contract_version": 1,
+    "ready": true,
+    "required_revision": "contract_test_0002",
+    "required_tables": ["_provisioning_identity", "contract_records"],
+    "table_privileges": {"contract_records": ["SELECT", "INSERT"]},
+    "sequence_privileges": {"contract_records_id_seq": ["USAGE"]}
+  },
+  "rejected": [
+    {"name": "legacy_string_version", "set": {"contract_version": "1.0"}},
+    {"name": "missing_table_policy", "remove": "table_privileges"},
+    {"name": "missing_sequence_policy", "remove": "sequence_privileges"},
+    {"name": "unlisted_audience_table", "set": {"required_tables": ["_provisioning_identity", "contract_records", "contract_audiences"]}},
+    {"name": "ddl_is_not_runtime_permission", "set": {"table_privileges": {"contract_records": ["SELECT", "CREATE"]}}},
+    {"name": "unreviewed_head_alias", "set": {"required_revision": "head"}},
+    {"name": "not_ready", "set": {"ready": false}}
+  ]
+}

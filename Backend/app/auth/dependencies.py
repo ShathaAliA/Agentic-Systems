@@ -9,7 +9,6 @@ from app.services.authorization import has_permission
 
 bearer = HTTPBearer(auto_error=False)
 
-
 def require_development_auth(request: Request):
     settings = request.app.state.auth_settings
     if settings.mode != "development_password":
@@ -36,10 +35,8 @@ def get_auth_context(
 
 
 def get_current_user(context=Depends(get_auth_context)) -> User:
-    """Only validated credentials resolve identity; request user IDs are ignored."""
     return context.user
-
-
+  
 def require_department_permission(permission_code: str):
     def check(department_id: str, user: User = Depends(get_current_user),
               session: Session = Depends(get_central_session)):

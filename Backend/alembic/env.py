@@ -29,6 +29,7 @@ def run_migrations_offline():
             hide_password=False
         ),
         target_metadata=target_metadata,
+        include_schemas=True, 
         literal_binds=True,
         dialect_opts={
             "paramstyle": "named"

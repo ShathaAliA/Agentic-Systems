@@ -24,3 +24,38 @@ storage/
 *.log
 *.dump
 *.backup
+
+# PoC scripts — local state only; shared scripts are tracked
+scripts/.poc_state.json
+scripts/test_router_isolated.py
+scripts/test_tenant_migration.py
+
+# Test samples are regenerable
+tests/samples/
+
+
+# Legacy local diagnostic scripts (not tracked)
+Backend/add_department.py
+Backend/add_user.py
+Backend/check_db.py
+Backend/check_departments.py
+Backend/check_hr_schema.py
+Backend/check_tables.py
+Backend/create_hr_tables.py
+Backend/create_hr_tables_direct.py
+Backend/create_tables.py
+Backend/enable_vector.py
+Backend/grant_admin.py
+# Local diagnostic scripts (legacy)
+Backend/add_department.py
+Backend/add_user.py
+Backend/check_db.py
+Backend/check_departments.py
+Backend/check_hr_schema.py
+Backend/check_tables.py
+Backend/create_hr_tables.py
+Backend/create_hr_tables_direct.py
+Backend/create_tables.py
+Backend/enable_vector.py
+Backend/grant_admin.py
+.credentials/

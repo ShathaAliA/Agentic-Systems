@@ -1,8 +1,13 @@
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env before anything else
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 from app.models import (
     User,
     Department,
@@ -34,22 +39,23 @@ def seed(*, development_fixtures=False, central_engine=None):
     if not development_fixtures or os.getenv("APP_ENV") != "development":
         raise RuntimeError("Demo seed requires APP_ENV=development and explicit --development-fixtures")
     if central_engine is None:
-        from app.database import engine as central_engine
+        # Seed is an administrative CLI — use direct connection (like worker.py).
+        from sqlalchemy import create_engine
+        from app.credentials import configured_url
+        central_engine = create_engine(
+            configured_url("DATABASE_URL"),
+            pool_pre_ping=True,
+            hide_parameters=True,
+        )
     from app.departments.models import CreationGrant
     from app.departments.service import normalize_name
     with Session(central_engine) as session:
         with session.begin():
 
             # 1. Departments
-            hr = get_or_create(
-                session, Department, {"name": "HR"}
-            )
-            finance = get_or_create(
-                session, Department, {"name": "Finance"}
-            )
+            hr = get_or_create(session, Department, {"name": "HR"})
+            finance = get_or_create(session, Department, {"name": "Finance"})
 
-            # Explicit fixtures added after dept001 must also reserve their names.
-            # Existing ownership is retained; head reconciliation remains explicit.
             for department in (hr, finance):
                 name, key = normalize_name(department.name)
                 get_or_create(session, CreationGrant, {"department_id": department.id},
@@ -61,16 +67,9 @@ def seed(*, development_fixtures=False, central_engine=None):
                 "Department Manager": "department",
                 "Employee": "department",
             }
-
             roles = {}
-
             for name, scope in role_definitions.items():
-                roles[name] = get_or_create(
-                    session,
-                    Role,
-                    {"name": name},
-                    {"scope": scope},
-                )
+                roles[name] = get_or_create(session, Role, {"name": name}, {"scope": scope})
 
             # 3. Permissions
             permission_codes = [
@@ -83,15 +82,9 @@ def seed(*, development_fixtures=False, central_engine=None):
                 "documents:manage_permissions",
                 "audit:read",
             ]
-
             permissions = {}
-
             for code in permission_codes:
-                permissions[code] = get_or_create(
-                    session,
-                    Permission,
-                    {"code": code},
-                )
+                permissions[code] = get_or_create(session, Permission, {"code": code})
 
             # 4. Role -> Permissions
             role_permissions = {
@@ -104,93 +97,28 @@ def seed(*, development_fixtures=False, central_engine=None):
                     "documents:manage_permissions",
                     "audit:read",
                 ],
-                "Employee": [
-                    "documents:read",
-                ],
+                "Employee": ["documents:read"],
             }
-
             for role_name, codes in role_permissions.items():
                 for code in codes:
                     get_or_create(
-                        session,
-                        RolePermission,
-                        {
-                            "role_id": roles[role_name].id,
-                            "permission_id": permissions[code].id,
-                        },
+                        session, RolePermission,
+                        {"role_id": roles[role_name].id, "permission_id": permissions[code].id},
                     )
 
             # 5. Demo Users
-            admin = get_or_create(
-                session,
-                User,
-                {"email": "admin@example.com"},
-                {"name": "Platform Admin"},
-            )
-
-            hr_manager = get_or_create(
-                session,
-                User,
-                {"email": "hr.manager@example.com"},
-                {"name": "HR Manager"},
-            )
-
-            finance_employee = get_or_create(
-                session,
-                User,
-                {"email": "finance.employee@example.com"},
-                {"name": "Finance Employee"},
-            )
+            admin = get_or_create(session, User, {"email": "admin@example.com"}, {"name": "Platform Admin"})
+            hr_manager = get_or_create(session, User, {"email": "hr.manager@example.com"}, {"name": "HR Manager"})
+            finance_employee = get_or_create(session, User, {"email": "finance.employee@example.com"}, {"name": "Finance Employee"})
 
             # 6. Department Memberships
-            get_or_create(
-                session,
-                DepartmentMembership,
-                {
-                    "user_id": hr_manager.id,
-                    "department_id": hr.id,
-                },
-            )
-
-            get_or_create(
-                session,
-                DepartmentMembership,
-                {
-                    "user_id": finance_employee.id,
-                    "department_id": finance.id,
-                },
-            )
+            get_or_create(session, DepartmentMembership, {"user_id": hr_manager.id, "department_id": hr.id})
+            get_or_create(session, DepartmentMembership, {"user_id": finance_employee.id, "department_id": finance.id})
 
             # 7. Role Assignments
-            get_or_create(
-                session,
-                RoleAssignment,
-                {
-                    "user_id": admin.id,
-                    "role_id": roles["Admin"].id,
-                    "department_id": None,
-                },
-            )
-
-            get_or_create(
-                session,
-                RoleAssignment,
-                {
-                    "user_id": hr_manager.id,
-                    "role_id": roles["Department Manager"].id,
-                    "department_id": hr.id,
-                },
-            )
-
-            get_or_create(
-                session,
-                RoleAssignment,
-                {
-                    "user_id": finance_employee.id,
-                    "role_id": roles["Employee"].id,
-                    "department_id": finance.id,
-                },
-            )
+            get_or_create(session, RoleAssignment, {"user_id": admin.id, "role_id": roles["Admin"].id, "department_id": None})
+            get_or_create(session, RoleAssignment, {"user_id": hr_manager.id, "role_id": roles["Department Manager"].id, "department_id": hr.id})
+            get_or_create(session, RoleAssignment, {"user_id": finance_employee.id, "role_id": roles["Employee"].id, "department_id": finance.id})
 
     print("Seed data created successfully!")
 

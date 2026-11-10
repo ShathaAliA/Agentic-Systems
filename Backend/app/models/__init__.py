@@ -344,3 +344,4 @@ class DepartmentDatabase(Base):
         default=utc_now,
         nullable=False,
     )
+

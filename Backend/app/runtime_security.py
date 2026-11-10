@@ -1,6 +1,4 @@
-"""Reject administrative identities on normal application connection pools."""
 from sqlalchemy import event
-
 
 def restrict_runtime_engine(engine):
     @event.listens_for(engine, "connect")

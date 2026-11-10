@@ -2,7 +2,7 @@
 param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\18\bin',
     [string]$Python,
-    [ValidateSet('tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
+    [ValidateSet('tests/test_document_provisioning_postgres.py', 'tests/test_document_results_postgres.py', 'tests/test_documents_postgres.py', 'tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
                  'tests/test_users_postgres.py', 'tests/test_departments_postgres.py', 'tests/test_usage_postgres.py')]
     [string]$TestFile = 'tests/test_role_policies_postgres.py'
 )

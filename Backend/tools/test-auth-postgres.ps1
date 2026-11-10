@@ -2,12 +2,20 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-core:test",
-    [ValidateSet("tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
+    [ValidateSet("postgres:17-alpine", "pgvector/pgvector:pg17")]
+    [string]$PostgresImage = "postgres:17-alpine",
+    [ValidateSet("tests/test_document_provisioning_postgres.py", "tests/test_document_results_postgres.py", "tests/test_documents_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $backendRoot = Join-Path $repoRoot "Backend"
+$testUser = "10001:10001"
+if (-not $IsWindows) {
+    $testUid = (& id -u).Trim()
+    $testGid = (& id -g).Trim()
+    $testUser = "${testUid}:${testGid}" # access private bind mounts without making secrets world-readable
+}
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "ai-auth-test-$suffix"
 $network = "ai-auth-network-$suffix"
@@ -46,7 +54,7 @@ try {
     Docker-Checked @("run", "-d", "--name", $container, "--network", $network,
         "--mount", "type=bind,source=$state,target=/run/auth-test,readonly",
         "-e", "POSTGRES_USER=auth_test_owner", "-e", "POSTGRES_DB=auth_test_db",
-        "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
+        "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", $PostgresImage)
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         # The image's temporary initialization server accepts Unix sockets before
@@ -64,6 +72,7 @@ try {
     # Verify archive readability; this is a fresh empty test database, not company data.
     Docker-Checked @("exec", $container, "pg_restore", "--list", "/tmp/auth-before.dump")
     Docker-Checked @("run", "--rm", "--network", $network,
+        "--user", $testUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
         "--mount", "type=bind,source=$backendRoot,target=/repo/Backend,readonly",
         "--mount", "type=bind,source=$(Join-Path $repoRoot 'pytest.ini'),target=/repo/pytest.ini,readonly",
         "--mount", "type=bind,source=$(Join-Path $repoRoot 'conftest.py'),target=/repo/conftest.py,readonly",
