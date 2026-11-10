@@ -1,16 +1,16 @@
 name: Core verification
 on:
   pull_request:
-    branches: [Backend]
+    branches: [Backend, PoC]
   push:
-    branches: [feature/core-backend]
+    branches: [feature/core-backend, sync/core-into-documents]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   unit-and-container:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,6 +28,13 @@ jobs:
       - run: docker build --target test -t ai-platform-core:test Backend
       - name: Check restricted runtime health
         run: python Backend/tools/check-core-container.py
+      - name: Real document migrations and tenant ACLs on isolated pgvector
+        shell: pwsh
+        run: |
+          foreach ($test in @('tests/test_documents_postgres.py', 'tests/test_document_provisioning_postgres.py')) {
+            ./Backend/tools/test-auth-postgres.ps1 -TestFile $test -PostgresImage pgvector/pgvector:pg17
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
   postgres-isolation:
     runs-on: windows-latest
     timeout-minutes: 30

@@ -23,29 +23,8 @@ pytestmark = pytest.mark.integration
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND / "tenant_alembic.ini"
 
-ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
-
-
-@pytest.fixture(scope="module")
-def fresh_db():
-    """Create a fresh dept_<hex> database, migrate to head, drop at end."""
-    hex_ = uuid.uuid4().hex
-    db_name = f"dept_{hex_}"
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-        c.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin.dispose()
-
-    test_url = f"postgresql+psycopg://postgres:postgres@127.0.0.1:5435/{db_name}"
-
-    yield {"db_name": db_name, "url": test_url}
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    admin.dispose()
+from document_test_infrastructure import fresh_db
+from test_authentication_postgres import isolated_postgres
 
 
 def test_tenant_0002_creates_required_tables(fresh_db):
@@ -156,7 +135,7 @@ def test_contract_matches_schema(fresh_db):
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
 
     assert contract["contract_version"] == 1, "contract_version must be int 1"
-    assert contract["required_revision"] == "tenant_0006"
+    assert contract["required_revision"] == "tenant_0007"
     assert contract["ready"] is False
     assert "_provisioning_identity" in contract["required_tables"]
     assert set(contract["required_tables"]).issubset({
@@ -167,6 +146,7 @@ def test_contract_matches_schema(fresh_db):
         "document_audit_logs",
         "document_chunks",
         "document_audiences",
+        "question_results",
     })
     # table_privileges / sequence_privileges present
     assert "table_privileges" in contract
