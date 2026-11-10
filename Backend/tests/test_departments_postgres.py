@@ -125,11 +125,11 @@ def test_archiving_during_worker_verification_cannot_reactivate(departments_pg, 
     started, release = Event(), Event()
     adapter = Mock()
     adapter.migration_url.return_value = "test-only"
-    def verify(*args):
+    def verify(*args, **kwargs):
         started.set()
         assert release.wait(10)
     adapter.verify.side_effect = verify
-    migrator = SimpleNamespace(available=True, contract_id="synthetic-contract", required_tables=("synthetic",),
+    migrator = SimpleNamespace(available=True, contract_id="synthetic-contract", required_tables=("synthetic",), runtime_privileges=lambda: {"table_privileges": {}, "sequence_privileges": {}},
                                migrate=Mock(return_value="synthetic_revision"))
     worker = Worker(admin, adapter, CredentialStore(tmp_path), migrator)
     with ThreadPoolExecutor(max_workers=1) as pool:

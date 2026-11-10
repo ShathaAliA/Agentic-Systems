@@ -27,7 +27,7 @@ def setup(tmp_path):
         s.add(DepartmentDatabase(id="registry", department_id="legal", database_name="dept_" + "a" * 32, credential_key="DEPT_" + "A" * 32, status="provisioning"))
     pg = Mock()
     pg.migration_url.return_value = "not-a-real-url"
-    migrator = SimpleNamespace(migrate=Mock(return_value="tenant_0001"), required_tables=("_provisioning_identity",), available=True, contract_id="test-contract")
+    migrator = SimpleNamespace(migrate=Mock(return_value="tenant_0001"), required_tables=("_provisioning_identity",), available=True, contract_id="test-contract", runtime_privileges=lambda: {"table_privileges": {}, "sequence_privileges": {}})
     worker = Worker(engine, pg, CredentialStore(tmp_path / "secrets"), migrator, lock=unlocked)
     yield worker, pg, migrator
     engine.dispose()
@@ -184,14 +184,14 @@ def test_unknown_migration_error_codes_are_not_persisted(setup):
 def test_ready_flag_cannot_bypass_missing_business_schema(tmp_path, revision, tables):
     import json
     path = tmp_path / "contract.json"
-    path.write_text(json.dumps({"ready": True, "required_revision": revision, "required_tables": tables}))
+    path.write_text(json.dumps({"contract_version": 1, "ready": True, "required_revision": revision, "required_tables": tables, "table_privileges": {t: ["SELECT"] for t in tables if t not in {"_provisioning_identity", "alembic_version"}}, "sequence_privileges": {}}))
     assert not TenantMigrator.from_contract(path).available
 
 
 def test_document_contract_requires_identity_and_business_table(tmp_path):
     import json
     path = tmp_path / "contract.json"
-    path.write_text(json.dumps({"ready": True, "required_revision": "documents_0002", "required_tables": ["_provisioning_identity", "documents"]}))
+    path.write_text(json.dumps({"contract_version": 1, "ready": True, "required_revision": "documents_0002", "required_tables": ["_provisioning_identity", "documents"], "table_privileges": {"documents": ["SELECT"]}, "sequence_privileges": {}}))
     contract = TenantMigrator.from_contract(path)
     assert contract.available
     assert contract.required_revision == "documents_0002"
@@ -239,7 +239,7 @@ def test_archived_department_is_ignored_even_when_registry_is_active(setup):
 @pytest.mark.parametrize("failure", [False, True])
 def test_archive_during_provisioning_fences_both_success_and_failure(setup, failure):
     w, pg, _ = setup
-    def archive_during_verify(*args):
+    def archive_during_verify(*args, **kwargs):
         with Session(w.engine) as s, s.begin():
             s.get(Department, "legal").archived_at = datetime.now(timezone.utc)
             s.scalar(select(DepartmentDatabase)).claim_token = None
