@@ -386,3 +386,18 @@ def company_summary(session, actor, *, now=None):
         "held_micro_usd": held, "remaining_micro_usd": max(settings.monthly_budget_micro_usd - actual - held, 0),
         "over_budget_micro_usd": max(actual + held - settings.monthly_budget_micro_usd, 0),
         "unresolved_requests": int(session.scalar(select(func.count()).select_from(UsageRequest).where(UsageRequest.state.in_(ACTIVE))))}
+
+def save_result(session, request_id, claim_id, payload, *, now=None):
+    """Store result payload for idempotent replay. Caller owns transaction."""
+    row = claimed(session, request_id, claim_id)
+    if row.state not in ("running", "uncertain"):
+        raise UsageError(409, "request_not_running")
+    row.result_payload = payload
+    session.flush()
+    return row
+
+
+def get_result(session, request_id):
+    """Retrieve stored result payload (for replay)."""
+    row = request_row(session, request_id)
+    return row.result_payload

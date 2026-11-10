@@ -324,9 +324,8 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask (with U1 idempotency)
+# Ask (with U1 + persisted result)
 # ------------------------------------------------------------------
-
 @router.post("/ask")
 async def ask_question(
     query: str,
@@ -376,10 +375,21 @@ async def ask_question(
             def callback(attempt_id):
                 try:
                     answer = rag_service.generate_answer(query, context)
-                    # Use server-computed cost from actual provider usage.
-                    # Provider token counts are advisory; cost is deterministic.
-                    from app.documents.rag_service import estimate_cost_micro_usd
-                    cost = estimate_cost_micro_usd(context, answer)
+                    cost = rag_service.estimate_cost_micro_usd(context, answer)
+                    ctx.save_result({
+                        "query": query,
+                        "answer": answer,
+                        "sources": [
+                            {
+                                "document": c["document_name"],
+                                "chunk_id": c["chunk_id"],
+                                "version": c.get("version"),
+                                "version_number": c.get("version_number"),
+                                "location": c.get("page_number"),
+                            }
+                            for c in allowed_chunks
+                        ],
+                    })
                     return ProviderReceipt(
                         key=f"receipt:{attempt_id}",
                         cost_micro_usd=cost,
@@ -387,11 +397,14 @@ async def ask_question(
                         output_tokens=len(answer.split()),
                     )
                 except Exception as e:
-                    # Provider failure AFTER authorization → uncertain (no refund).
                     logger.exception("LLM provider failed: %s", e)
                     raise
 
-            ctx.perform(attempt_key, provider, model, estimate_cost_micro_usd(context, ""), callback)
+            ctx.perform(
+                attempt_key, provider, model,
+                rag_service.estimate_cost_micro_usd(context, ""),
+                callback,
+            )
             return "answered"
 
     try:
@@ -400,7 +413,7 @@ async def ask_question(
             user_id=current_user.id,
             request_key=request_key,
             fingerprint=fingerprint,
-            estimated_micro_usd=estimate_cost_micro_usd("", ""),
+            estimated_micro_usd=rag_service.estimate_cost_micro_usd("", ""),
             processor=processor,
         )
     except usage_service.UsageError as e:
@@ -410,10 +423,8 @@ async def ask_question(
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
     if result.state == "completed":
-        if result.outcome == "answered":
-            return _build_answer_response(
-                query, request_key, department_id, current_user.id, user_depts, user_roles
-            )
+        if result.outcome == "answered" and result.result_payload:
+            return {**result.result_payload, "request_key": request_key, "replayed": result.replayed}
         elif result.outcome == "no_answer":
             return {
                 "query": query,
@@ -435,46 +446,6 @@ async def ask_question(
         status_code=409,
         detail=f"الطلب قيد المعالجة (state={result.state}). يرجى إعادة المحاولة.",
     )
-
-
-def _build_answer_response(query, request_key, department_id, user_id, user_depts, user_roles):
-    with _open_department_session(
-        user_id=user_id,
-        department_id=department_id,
-        permission_code="documents:read",
-    ) as db:
-        context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
-        allowed = [
-            c for c in context_chunks
-            if c.get("document_id") is None
-            or user_can_access_document(db, c["document_id"], user_depts, user_roles)
-        ]
-        if not allowed:
-            return {
-                "query": query,
-                "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
-                "sources": [],
-                "request_key": request_key,
-                "replayed": True,
-            }
-        context = "\n\n".join([c["content"] for c in allowed])
-        answer = rag_service.generate_answer(query, context)
-        return {
-            "query": query,
-            "answer": answer,
-            "sources": [
-                {
-                    "document": c["document_name"],
-                    "chunk_id": c["chunk_id"],
-                    "version": c.get("version"),
-                    "version_number": c.get("version_number"),
-                    "location": c.get("page_number"),
-                }
-                for c in allowed
-            ],
-            "request_key": request_key,
-            "replayed": True,
-        }
 
 
 # ------------------------------------------------------------------
@@ -638,7 +609,6 @@ async def get_document(
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
             if not user_can_access_document(db, doc.id, user_depts, user_roles):
                 raise HTTPException(status_code=403, detail="Permission denied")
-
             return {
                 "id": doc.id,
                 "filename": doc.filename,
@@ -707,7 +677,7 @@ async def update_document_metadata(
 
 
 # ------------------------------------------------------------------
-# B2: Replace document (new version)
+# B2: Replace document
 # ------------------------------------------------------------------
 @router.post("/{document_id}/version")
 async def replace_document_version(
@@ -842,7 +812,7 @@ async def add_document_audience(
     if audience_department_id is None and audience_role_id is None:
         raise HTTPException(
             status_code=400,
-            detail="حدد قسماً أو دوراً (أو كلاهما). لاستخدام (NULL,NULL) استخدم endpoint منفصل.",
+            detail="حدد قسماً أو دوراً (أو كلاهما).",
         )
 
     try:

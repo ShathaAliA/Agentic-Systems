@@ -1,7 +1,7 @@
 """U1 integration adapter for external services (documents).
 
 Thin wrapper around `app.usage.service` — no duplicated accounting logic.
-Uses `service.run_once` via the same transaction boundary.
+Persists result payload on usage_requests for idempotent replay.
 """
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ class ProcessingReceipt:
     state: str
     outcome: str | None
     replayed: bool
+    result_payload: dict | None = None
 
 
 def transaction(engine, operation):
@@ -47,6 +48,10 @@ class AccountingContext:
             s, self.request_id, self._claim, key, receipt.key, receipt.cost_micro_usd,
             input_tokens=receipt.input_tokens, output_tokens=receipt.output_tokens))
 
+    def save_result(self, payload):
+        return transaction(self.engine, lambda s: service.save_result(
+            s, self.request_id, self._claim, payload))
+
     def perform(self, key, provider, model, maximum, callback):
         admission = self.authorize(key, provider, model, maximum)
         if not admission.created:
@@ -65,12 +70,19 @@ def run_once(engine, user_id, request_key, fingerprint, estimated_micro_usd, pro
     - returns outcome ('answered' | 'no_answer' | 'technical_error')
     - MAY raise ConfirmedTechnicalFailure (→ refunded)
     - MUST NOT raise on uncertain errors (timeout) — those stay 'uncertain'
+    - MUST call ctx.save_result(...) if outcome is 'answered'
     """
     admission = transaction(engine, lambda s: service.reserve(
         s, user_id, request_key, fingerprint, estimated_micro_usd))
     identity = admission.request.id
     if not admission.created:
-        return ProcessingReceipt(identity, admission.request.state, admission.request.outcome, True)
+        return ProcessingReceipt(
+            identity,
+            admission.request.state,
+            admission.request.outcome,
+            True,
+            admission.request.result_payload,
+        )
     try:
         claim = transaction(engine, lambda s: service.start(s, identity))
     except service.UsageError:
@@ -85,11 +97,12 @@ def run_once(engine, user_id, request_key, fingerprint, estimated_micro_usd, pro
     except ConfirmedTechnicalFailure:
         outcome = "technical_error"
     except Exception:
-        # Uncertain — do NOT auto-refund.
+        # Uncertain — do NOT auto-refund (timeout may have incurred cost).
         row = transaction(engine, lambda s: service.mark_uncertain(s, identity, claim))
         return ProcessingReceipt(identity, row.state, row.outcome, False)
     try:
         row = transaction(engine, lambda s: service.finish(s, identity, claim, outcome))
+        return ProcessingReceipt(identity, row.state, row.outcome, False, row.result_payload)
     except service.UsageError:
         row = transaction(engine, lambda s: service.mark_uncertain(s, identity, claim))
-    return ProcessingReceipt(identity, row.state, row.outcome, False)
+        return ProcessingReceipt(identity, row.state, row.outcome, False)
