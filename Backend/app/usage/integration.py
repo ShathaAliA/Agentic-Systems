@@ -1,9 +1,7 @@
 """U1 integration adapter for external services (documents).
 
-Wraps `app.usage.service` with a run_once/AccountingContext interface
-that matches the Core U1 design.
-
-This module is the integration boundary — do not import it from Core routes.
+Thin wrapper around `app.usage.service` — no duplicated accounting logic.
+Uses `service.run_once` via the same transaction boundary.
 """
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
@@ -60,6 +58,14 @@ class AccountingContext:
 
 
 def run_once(engine, user_id, request_key, fingerprint, estimated_micro_usd, processor):
+    """
+    Wrap `service.reserve/start/finish` with the same transaction boundary as Core.
+
+    Processor:
+    - returns outcome ('answered' | 'no_answer' | 'technical_error')
+    - MAY raise ConfirmedTechnicalFailure (→ refunded)
+    - MUST NOT raise on uncertain errors (timeout) — those stay 'uncertain'
+    """
     admission = transaction(engine, lambda s: service.reserve(
         s, user_id, request_key, fingerprint, estimated_micro_usd))
     identity = admission.request.id
@@ -79,6 +85,7 @@ def run_once(engine, user_id, request_key, fingerprint, estimated_micro_usd, pro
     except ConfirmedTechnicalFailure:
         outcome = "technical_error"
     except Exception:
+        # Uncertain — do NOT auto-refund.
         row = transaction(engine, lambda s: service.mark_uncertain(s, identity, claim))
         return ProcessingReceipt(identity, row.state, row.outcome, False)
     try:

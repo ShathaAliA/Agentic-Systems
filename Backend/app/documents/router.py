@@ -326,6 +326,7 @@ async def revise_document(
 # ------------------------------------------------------------------
 # Ask (with U1 idempotency)
 # ------------------------------------------------------------------
+
 @router.post("/ask")
 async def ask_question(
     query: str,
@@ -348,49 +349,50 @@ async def ask_question(
     from app.database import engine as central_engine
 
     def processor(ctx: AccountingContext) -> str:
-        try:
-            with _open_department_session(
-                user_id=current_user.id,
-                department_id=department_id,
-                permission_code="documents:read",
-            ) as db:
-                context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
-                if not context_chunks:
-                    return "no_answer"
+        with _open_department_session(
+            user_id=current_user.id,
+            department_id=department_id,
+            permission_code="documents:read",
+        ) as db:
+            context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+            if not context_chunks:
+                return "no_answer"
 
-                allowed_chunks = []
-                for c in context_chunks:
-                    doc_id = c.get("document_id")
-                    if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
-                        allowed_chunks.append(c)
+            allowed_chunks = []
+            for c in context_chunks:
+                doc_id = c.get("document_id")
+                if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
+                    allowed_chunks.append(c)
 
-                if not allowed_chunks:
-                    return "no_answer"
+            if not allowed_chunks:
+                return "no_answer"
 
-                context = "\n\n".join([c["content"] for c in allowed_chunks])
+            context = "\n\n".join([c["content"] for c in allowed_chunks])
 
-                provider = rag_service.PROVIDER
-                model = "gpt-4o-mini" if provider == "openai" else "gemini-3.8-flash"
-                attempt_key = f"ask:{request_key}"
+            provider = rag_service.PROVIDER
+            model = "gpt-4o-mini" if provider == "openai" else "gemini-3.8-flash"
+            attempt_key = f"ask:{request_key}"
 
-                def callback(attempt_id):
-                    try:
-                        answer = rag_service.generate_answer(query, context)
-                        return ProviderReceipt(
-                            key=f"receipt:{attempt_id}",
-                            cost_micro_usd=1000,
-                            input_tokens=len(context.split()),
-                            output_tokens=len(answer.split()),
-                        )
-                    except Exception as e:
-                        logger.exception("LLM provider failed: %s", e)
-                        raise
+            def callback(attempt_id):
+                try:
+                    answer = rag_service.generate_answer(query, context)
+                    # Use server-computed cost from actual provider usage.
+                    # Provider token counts are advisory; cost is deterministic.
+                    from app.documents.rag_service import estimate_cost_micro_usd
+                    cost = estimate_cost_micro_usd(context, answer)
+                    return ProviderReceipt(
+                        key=f"receipt:{attempt_id}",
+                        cost_micro_usd=cost,
+                        input_tokens=len(context.split()),
+                        output_tokens=len(answer.split()),
+                    )
+                except Exception as e:
+                    # Provider failure AFTER authorization → uncertain (no refund).
+                    logger.exception("LLM provider failed: %s", e)
+                    raise
 
-                ctx.perform(attempt_key, provider, model, 1000, callback)
-                return "answered"
-        except Exception as e:
-            logger.exception("Processor error: %s", e)
-            raise
+            ctx.perform(attempt_key, provider, model, estimate_cost_micro_usd(context, ""), callback)
+            return "answered"
 
     try:
         result = run_once(
@@ -398,7 +400,7 @@ async def ask_question(
             user_id=current_user.id,
             request_key=request_key,
             fingerprint=fingerprint,
-            estimated_micro_usd=1000,
+            estimated_micro_usd=estimate_cost_micro_usd("", ""),
             processor=processor,
         )
     except usage_service.UsageError as e:

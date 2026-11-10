@@ -172,3 +172,34 @@ def generate_answer(query: str, context: str) -> str:
     except Exception:
         logger.exception("LLM provider error")
         raise
+
+# Server-side cost estimation (micro-USD per 1K tokens).
+# Gemini Flash: $0.075 per 1M input tokens, $0.30 per 1M output tokens.
+# OpenAI GPT-4o-mini: $0.15 per 1M input, $0.60 per 1M output.
+# Use conservative estimates.
+
+_COST_PER_1K_INPUT = {
+    "gemini": 0.000075,  # $0.075 / 1M tokens
+    "openai": 0.000150,  # $0.15 / 1M tokens
+}
+_COST_PER_1K_OUTPUT = {
+    "gemini": 0.000300,  # $0.30 / 1M tokens
+    "openai": 0.000600,  # $0.60 / 1M tokens
+}
+
+
+def estimate_cost_micro_usd(context: str, answer: str) -> int:
+    """
+    Server-computed cost in micro-USD (not accepted from client).
+    Uses conservative estimates; actual provider cost may differ.
+    """
+    input_tokens = max(len(context.split()), 1)
+    output_tokens = max(len(answer.split()), 1)
+    provider = PROVIDER.lower()
+    input_cost = _COST_PER_1K_INPUT.get(provider, _COST_PER_1K_INPUT["gemini"])
+    output_cost = _COST_PER_1K_OUTPUT.get(provider, _COST_PER_1K_OUTPUT["gemini"])
+    micro_usd = int(
+        (input_tokens / 1000) * input_cost * 1_000_000
+        + (output_tokens / 1000) * output_cost * 1_000_000
+    )
+    return max(micro_usd, 1)  # at least 1 micro-USD
