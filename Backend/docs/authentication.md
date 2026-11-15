@@ -30,6 +30,13 @@ Password hashing uses the high-level
   (default 900 seconds, allowed 60–3600), `authentication_provider`, and
   `production_ready: false`. Only its SHA-256 digest is stored in PostgreSQL. No
   signing key is needed for server-side sessions; no self-asserted JWT is accepted.
+- `POST /auth/dev/token`: development-only `application/x-www-form-urlencoded`
+  adapter for Swagger, using `username` (the enrolled email) and `password`.
+  It calls the same login service as JSON login, sharing account/IP/global
+  counters, expiry, credential checks and revocation. A form scope, client ID,
+  user ID or role never grants permissions. It is not an Entra/OIDC integration
+  or a production password grant. Both login routes are disabled unless the
+  existing development authentication settings explicitly allow them.
 - `GET /auth/me`: validated current user ID/name/email/status and current effective
   role scopes. No hashes, session IDs, tenant credentials or database references.
   Send `Authorization: Bearer <returned token>`; cookies, query parameters,
@@ -115,6 +122,21 @@ database router must receive `user.id` from this dependency, never a caller ID.
    Set `AUTH_MODE=development_password` in its private operator environment to opt
    in after migrations/grants/enrollment. Rebuild the backend image before use.
    This change does not start services automatically.
+
+### Swagger development sign-in
+
+After installing the updated requirements (including pinned `python-multipart`),
+open `/docs`, click **Authorize**, enter the enrolled email in **username** and
+the password locally, then authorize. Leave client credentials and scopes empty.
+Swagger obtains an opaque session from `/auth/dev/token`; existing JSON login
+clients and `Authorization: Bearer ...` headers continue to work. The relative
+token URL supports a correctly configured ASGI root path behind a proxy.
+
+Use `GET /auth/me` to verify the identity. `POST /auth/logout` revokes the current
+server-side session; Swagger's Authorize dialog **Logout** only clears its browser
+copy, so use the endpoint when revocation is needed. After revoking, clear the
+Swagger authorization. Authorization persistence is not enabled. Do not include
+the token, password or generated authenticated curl command in screenshots.
 
 Keep returned bearer tokens in client memory; do not persist them in browser local
 storage or log Authorization headers/request bodies. Local HTTP is for loopback
