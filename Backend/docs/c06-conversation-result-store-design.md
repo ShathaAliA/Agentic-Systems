@@ -1,6 +1,9 @@
-# C06 — Conversation / Result Store: design proposal (no implementation)
+# C06 — Conversation / Result Store: approved baseline and Gate 2 proposal
 
-**Status:** DESIGN ONLY / approval pending. **Branch:** `feature/core-backend`.
+**Status:** Gate 1 verified; Gate 2 approved and implemented locally for isolated
+synthetic verification only. No real document delivery or Gate 3 implementation.
+D01/D02/D03 were already approved by the user on 2026-11-15.
+**Branch:** `feature/core-backend`.
 **Precondition:** C05 Core-side verification closed; see
 [c05-closure.md](c05-closure.md). This document adds no runtime code,
 migrations, API routes, storage, credentials, grants, or database operations.
@@ -44,13 +47,12 @@ Conversation metadata -> references C06 authoritative result IDs
 Central ledger -> accounting state and opaque request IDs only
 ```
 
-**Proposed default:** a new, Core-owned **Conversation Store service
-with a separate dedicated database/schema**, not the existing Central
-database and not a direct write into an existing HR/Finance/Legal
-tenant. This is a *design preference*, not a selected production
-database or permission to provision one. The alternative of a
-per-tenant physical store must be compared before approval, especially
-for multi-department questions and strict tenant isolation.
+**Approved D01:** a Core-owned Conversation Store service with a **separate
+PostgreSQL database on the same server**, its own restricted connection and
+separate migration identity. A schema inside Central or an existing tenant is
+not the approved alternative. Human department conversations stay in their
+owning tenant and start with the employee-approved summary only. Architecture
+approval does not authorize database creation, grants or Gate 2 implementation.
 
 There must be **one authoritative answer copy**. The partner branch's
 tenant `question_results` table is a pre-existing candidate, not an
@@ -82,12 +84,12 @@ The stored record must preserve the C04
 `StoredQuestionResult(user_id, request_id, fingerprint, outcome,
 payload)` invariant.
 
-**Question text/history:** not stored by default in the first proposed
-result-only slice. A conversation UI requiring original question text
-must first approve a separate sensitive-content policy (purpose,
-consent/notice, encryption, access, retention, deletion and audit).
-Do not silently copy the question from U1 or store prompts/embeddings
-in the Central ledger.
+**Question text/history:** retained full history is already a product requirement.
+Sent messages cannot be edited or deleted by any application role, including
+Admin. Gate 2 is a temporary result-only slice; question text and history are
+deferred to Gate 3, not removed or made subject to a new product opt-in.
+Operational encryption/access/backup controls still need implementation. Do not
+copy prompts or embeddings into Central or add a message deletion/expiry API.
 
 **Multi-department answers:** bind the immutable result to the exact
 authorized department scope and every cited source. Replay is
@@ -181,10 +183,10 @@ or blindly refunding.
 - No raw answers, prompts, source quotes, tokens, embeddings or
   credentials in audit logs. Log request/result IDs, event status,
   safe error codes and authorization decisions only.
-- Retention/deletion policy is unresolved: legal hold, user deletion,
-  account deactivation, backup expiry and immutable accounting
-  retention must be separated. Revocation must immediately block
-  delivery even if the result remains in protected storage.
+- Retained immutable sent messages and no application edit/delete are approved.
+  Account deactivation/revocation blocks delivery, not audit retention. Backup
+  lifetimes, keys and recovery need technical policies without silently enabling
+  chat deletion. Any exceptional retention change needs separate approval.
 - C02 no-store, sanitized errors, least privilege and current
   authentication/session checks remain mandatory.
 
@@ -192,26 +194,28 @@ or blindly refunding.
 
 | Decision | Preferred option | Must be approved by |
 | --- | --- | --- |
-| Physical store | New Core-owned dedicated store, separate from Central and existing tenants | Core + document owner + database/security reviewer |
-| Tenant isolation | Department-scope enforcement plus DB isolation/RLS; compare per-tenant physical DB | Security/DB reviewer |
+| Physical store | Approved D01: separate Core-owned database on the same server, not a Central schema | User approved; implementation scope pending |
+| Tenant isolation | Owner/scope enforcement plus restricted PostgreSQL roles and proven isolation within D01 | Concrete controls to test |
 | Existing partner `question_results` | Resolve single authority before migration or adapter | Core + documents-ai owner |
-| Conversation history | Metadata + result refs first; raw question text opt-in only | Product/privacy reviewer |
-| Answer/source schema | Strict versioned payload and pinned refs; fail closed on any revoked source | Document owner + Core |
+| Conversation history | Full retained immutable history required; result-only Gate 2, history in Gate 3 | Already approved product scope |
+| Answer/source schema | Reuse approved RC2 DTOs; finalize strict storage mapping and source adapter | Document owner + Core integration review |
 | Migration graphs | Reconcile `rbac001` and `usage003_merge` in a separate approved plan | DB/migration owner |
 | Provider settlement/reconciliation | U1 receipts authoritative; manual review of uncertain states | Core accounting owner |
-| Retention, backup, encryption, deletion | Define explicit policies before persistent content | Security/privacy/operations |
+| Backup/encryption operations | Preserve no-edit/no-delete behavior; define keys, recovery and backup controls before real data | Concrete operational review |
 
-## 8. Implementation plan (future, not authorized here)
+## 8. Gate progression
 
-**Gate 0 — approve design:** resolve all ownership/schema/security
-decisions above; confirm source/audience/version and multi-department
-semantics, privacy policy and tenant contract. Do not treat C05 green
-CI as approval of these decisions.
+**Gate 0 — approved baseline:** preserve D01/D02/D03 and immutable-history
+requirements. Resolve remaining concrete contracts without reopening the physical
+store selection. CI success does not authorize implementation or infrastructure.
 
 **Gate 1 — synthetic contract tests:** fresh isolated DB, negative
 authorization and replay cases, immutable conflicts, crash after
 commit, concurrent writers, missing/corrupt result, source revocation,
 failed Legal, and proof no content in Central.
+Gate 1 is now implemented as a test-only SQLite harness and verified by hosted
+CI at `f5f7c8888a1a371efa117a2a4747138ba72cab2d`: 387 unit tests and 64 fresh
+PostgreSQL tests passed. The latter verify Core, not a C06 PostgreSQL store.
 
 **Gate 2 — minimal result persistence:** add a dedicated Core store
 interface adapter and additive store-only migrations in a new test
@@ -245,4 +249,56 @@ activation plan. No automatic merge or Legal activation.
   failed unless separately authorized and verified.
 - No document branch changes, no migration-history rewriting, no merge.
 
-**Current C06 state: proposal drafted; implementation NOT started.**
+## 9. Approved Gate 2 — minimal isolated PostgreSQL result adapter
+
+The user explicitly approved this scope after reviewing this plan. That approval
+does not extend to Gate 3 or live delivery. Existing HR/Finance/Legal/Central databases,
+containers, credentials and volumes are not test targets.
+
+1. **Freeze the slice contract:** D01's separate database; opaque Central request
+   references, no cross-database FKs. A versioned envelope follows approved RC2
+   answer/source DTOs: owner, request, fingerprint, accounting outcome, business
+   status and pinned source versions/locations. One U1 request has one owner.
+2. **Store-only migrations and adapter:** proposed immutable `question_results`
+   and `result_sources`, with atomic result/source commit and request uniqueness.
+   Keep all historical Central/tenant migrations unchanged. A separate migration
+   identity owns schema work; runtime has only necessary INSERT/SELECT access,
+   no UPDATE/DELETE/DDL/ownership or privileged role flags. Prove restrictions
+   with real SQL denial tests, not Python dataclasses alone.
+3. **Fail-closed reads:** a mandatory trusted source authorizer checks every
+   delivery/replay; no allow-all default. C04 validates result identity/outcome
+   against U1. Tests inject synthetic decisions; application delivery remains
+   disabled without the real document adapter. No public routes, Admin bypass
+   or weakening of the department gate/shared-knowledge boundary.
+4. **Fresh synthetic infrastructure:** uniquely owned cluster/database, private
+   state, fresh credentials, backup before migrations/grants, owners/ACL evidence,
+   confirmed shutdown and retained recovery artifacts under C03 guards. Real
+   data remains excluded pending encryption, key/backup/restore controls and
+   company processing approval. No fallback to current department resources.
+5. **Acceptance tests:** fresh migrations/replay, reopen/restart, concurrent
+   duplicate writes, malformed/corrupt records, wrong owner/scope, revoked source,
+   no_answer, lost save acknowledgement, save-before-U1-finish, controlled and
+   abrupt finish failures. No redispatch/refund/delivery while running/uncertain.
+   Verify append-only rows, privilege isolation, secret-free logs and no content
+   in Central. Run full Core plus the new isolated PostgreSQL store suite.
+6. **Report and stop:** prepare small local reviewable commits and report actual
+   counts/limitations. No push, merge, provider call or Gate 3 implementation.
+
+**One authority:** Gate 2 creates a candidate Core-owned store for isolated
+validation, not live document writes. Before joint delivery, agree how partner
+tenant `question_results` becomes a legacy/non-authoritative reference or follows
+a separately reviewed migration. Do not dual-write answers or copy/delete partner
+data; documents-ai remains untouched. Source validation and business DTO mapping
+must be jointly tested before enabling integration.
+
+**Excluded:** question/history APIs until Gate 3, human handoff/notifications,
+shared-search broker, document/RAG/source adapter implementation, real providers,
+production setup, automatic reconciliation, legacy conversion and Legal activation.
+
+**Gate 2 exit:** isolated schema, immutability, privilege and failure tests pass;
+no real integration claim. Then propose Gate 3 and joint source/authority work.
+
+**Current C06 state:** Gate 2 PostgreSQL adapter and separate migrations are
+implemented for isolated synthetic testing. No application route is wired to it,
+and conversation APIs/real document integration have not started. See
+[Gate 2 verification and security limits](c06-gate2-verification.md).

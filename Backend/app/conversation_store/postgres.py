@@ -123,4 +123,3 @@ class PostgresResultStore:
         if decision is not True:
             raise UsageError(403, "question_source_access_revoked")
         return record
-
