@@ -50,6 +50,7 @@ REJECTION_MESSAGES = {
     "invalid_format": "الملف تالف أو غير قابل للقراءة.",
     "no_text_extraction_without_ocr": "لا يمكن استخراج نص من هذا الملف (قد يحتاج OCR).",
     "extraction_failed": "تعذر استخراج النص من الملف.",
+    "empty_extraction": "لا يمكن استخراج نص من هذا الملف (قد يكون فارغاً أو يحتاج OCR).",
 }
 
 
@@ -135,6 +136,46 @@ async def upload_document(
                 Document.department_id == department_id,
             ).first()
 
+            extracted_text = result["extraction"].get("original_text", "") or ""
+
+            # 1) أنشئ new_doc أولاً (بدون أرشفة القديم)
+            new_doc = Document(
+                filename=file.filename,
+                file_path=file_path,
+                file_type=file_ext,
+                extracted_text=extracted_text,
+                department_id=department_id,
+                status="pending_review",
+                version=existing_doc.version + 1 if existing_doc else 1,
+            )
+            db.add(new_doc)
+            db.flush()  # للحصول على id
+
+            # 2) version + audit
+            db.add(DocumentVersion(
+                document_id=new_doc.id,
+                version_number=new_doc.version,
+                status="pending",
+            ))
+            db.add(DocumentAuditLog(
+                document_id=new_doc.id,
+                action="upload",
+                performed_by=current_user.id,
+                version_number=new_doc.version,
+            ))
+
+            # 3) chunks
+            chunks = rag_service.chunk_text(extracted_text)
+            if chunks:
+                rag_service.process_and_store_chunks(
+                    db,
+                    new_doc.id,
+                    chunks,
+                    version_number=new_doc.version,
+                    pages=result["extraction"].get("pages"),
+                )
+
+            # 4) الآن — أرشفة القديم (بعد نجاح الجديد)
             if existing_doc:
                 existing_doc.status = "archived"
                 db.add(DocumentAuditLog(
@@ -149,45 +190,10 @@ async def upload_document(
                 ).first()
                 if existing_version:
                     existing_version.status = "archived"
-                db.commit()
 
-            extracted_text = result["extraction"].get("original_text", "") or ""
-
-            new_doc = Document(
-                filename=file.filename,
-                file_path=file_path,
-                file_type=file_ext,
-                extracted_text=extracted_text,
-                department_id=department_id,
-                status="pending_review",
-                version=existing_doc.version + 1 if existing_doc else 1,
-            )
-            db.add(new_doc)
+            # 5) commit واحد (atomic)
             db.commit()
             db.refresh(new_doc)
-
-            db.add(DocumentVersion(
-                document_id=new_doc.id,
-                version_number=new_doc.version,
-                status="pending",
-            ))
-            db.add(DocumentAuditLog(
-                document_id=new_doc.id,
-                action="upload",
-                performed_by=current_user.id,
-                version_number=new_doc.version,
-            ))
-            db.commit()
-
-            chunks = rag_service.chunk_text(extracted_text)
-            if chunks:
-                rag_service.process_and_store_chunks(
-                    db,
-                    new_doc.id,
-                    chunks,
-                    version_number=new_doc.version,
-                    pages=result["extraction"].get("pages"),
-                )
 
             return {
                 "status": "success",
