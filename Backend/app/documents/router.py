@@ -138,7 +138,7 @@ async def upload_document(
 
             extracted_text = result["extraction"].get("original_text", "") or ""
 
-            # 1) أنشئ new_doc أولاً (بدون أرشفة القديم)
+            # 1) أنشئ new_doc أولاً (بدون أرشفة القديم — أرشفة تحدث في approve)
             new_doc = Document(
                 filename=file.filename,
                 file_path=file_path,
@@ -164,7 +164,7 @@ async def upload_document(
                 version_number=new_doc.version,
             ))
 
-            # 3) chunks
+            # 3) chunks (بدون commit — flush فقط)
             chunks = rag_service.chunk_text(extracted_text)
             if chunks:
                 rag_service.process_and_store_chunks(
@@ -175,23 +175,7 @@ async def upload_document(
                     pages=result["extraction"].get("pages"),
                 )
 
-            # 4) الآن — أرشفة القديم (بعد نجاح الجديد)
-            if existing_doc:
-                existing_doc.status = "archived"
-                db.add(DocumentAuditLog(
-                    document_id=existing_doc.id,
-                    action="archive",
-                    performed_by=current_user.id,
-                    version_number=existing_doc.version,
-                ))
-                existing_version = db.query(DocumentVersion).filter(
-                    DocumentVersion.document_id == existing_doc.id,
-                    DocumentVersion.status == "approved",
-                ).first()
-                if existing_version:
-                    existing_version.status = "archived"
-
-            # 5) commit واحد (atomic)
+            # 4) commit واحد (atomic) — لا أرشفة للقديم هنا
             db.commit()
             db.refresh(new_doc)
 
@@ -207,11 +191,17 @@ async def upload_document(
         raise
     except Exception as e:
         logger.exception("Upload DB error: %s", e)
+        # ⚠️ cleanup: احذف الملف النهائي إذا فشل DB commit
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
 # ------------------------------------------------------------------
-# Approve
+# Approve (archives previous approved — RAG stays available until then)
 # ------------------------------------------------------------------
 @router.post("/{document_id}/approve")
 async def approve_document(
@@ -236,6 +226,29 @@ async def approve_document(
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            # ✅ NEW: archive previous approved docs with same filename (RAG stays on old until now)
+            previous = db.query(Document).filter(
+                Document.filename == doc.filename,
+                Document.department_id == department_id,
+                Document.id != doc.id,
+                Document.status == "approved",
+            ).all()
+            for prev in previous:
+                prev.status = "archived"
+                prev_version = db.query(DocumentVersion).filter(
+                    DocumentVersion.document_id == prev.id,
+                    DocumentVersion.status == "approved",
+                ).first()
+                if prev_version:
+                    prev_version.status = "archived"
+                db.add(DocumentAuditLog(
+                    document_id=prev.id,
+                    action="archive",
+                    performed_by=current_user.id,
+                    version_number=prev.version,
+                ))
+
+            # اعتماد الجديد
             doc.status = "approved"
             version = db.query(DocumentVersion).filter(
                 DocumentVersion.document_id == doc.id,
@@ -357,7 +370,6 @@ def ask_question(
         central_engine = request.app.state.central_engine or central_db.get_bind()
 
         def context_for_user():
-            # New session after processing: no stale membership/role snapshot.
             with Session(central_engine) as session:
                 return get_user_context(session, current_user.id, department_id)
 
@@ -372,7 +384,7 @@ def ask_question(
                 if allowed:
                     context = "\n\n".join(c["content"] for c in allowed)
                     if len(provider_accounting.prompt_for(query, context).encode("utf-8")) + 512 > settings.input_limit:
-                        raise ConfirmedTechnicalFailure()  # before authorizing/dispatching
+                        raise ConfirmedTechnicalFailure()
                     def call(attempt_id):
                         answer, receipt = provider_accounting.generate(settings, query, context, attempt_id)
                         payload.update(status="answered", answer=answer, sources=[{
@@ -759,6 +771,11 @@ async def replace_document_version(
         raise
     except Exception as e:
         logger.exception("Replace DB error: %s", e)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
