@@ -2,7 +2,7 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-core:test",
-    [ValidateSet("tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
+    [ValidateSet("tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
@@ -12,6 +12,7 @@ Assert-LocalTestDocker $Docker
 $testUser = Get-TestClientUser
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $backendRoot = Join-Path $repoRoot "Backend"
+$testDatabase = if ($TestFile -eq 'tests/test_c06_result_store_postgres.py') { 'c06_result_test' } else { 'auth_test_db' }
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "ai-auth-test-$suffix"
 $network = "ai-auth-network-$suffix"
@@ -35,7 +36,7 @@ if ($IsWindows) {
 # Unique throwaway secrets stay in ignored local files, never command arguments.
 $password = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 [IO.File]::WriteAllText((Join-Path $state "postgres-password"), $password)
-$url = "postgresql+psycopg://auth_test_owner:${password}@${container}:5432/auth_test_db"
+$url = "postgresql+psycopg://auth_test_owner:${password}@${container}:5432/$testDatabase"
 @{url=$url} | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $state "admin.json")
 $password = $null
 $url = $null
@@ -54,19 +55,19 @@ try {
     Docker-Checked @("run", "-d", "--name", $container, "--network", $network,
         "--label", "ai-platform-test-run=$suffix",
         "--mount", "type=bind,source=$state,target=/run/auth-test,readonly",
-        "-e", "POSTGRES_USER=auth_test_owner", "-e", "POSTGRES_DB=auth_test_db",
+        "-e", "POSTGRES_USER=auth_test_owner", "-e", "POSTGRES_DB=$testDatabase",
         "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         # The image's temporary initialization server accepts Unix sockets before
         # restarting. TCP is available only on the final server used by tests.
-        & $Docker exec $container pg_isready -h 127.0.0.1 -U auth_test_owner -d auth_test_db *> $null
+        & $Docker exec $container pg_isready -h 127.0.0.1 -U auth_test_owner -d $testDatabase *> $null
         if ($LASTEXITCODE -eq 0) { $ready = $true; break }
         Start-Sleep -Milliseconds 500
     }
     if (-not $ready) { throw "Isolated PostgreSQL did not become ready" }
     # Recovery artifacts BEFORE migrations or privilege changes, inside new cluster only.
-    Docker-Checked @("exec", $container, "pg_dump", "-U", "auth_test_owner", "-d", "auth_test_db", "-Fc", "-f", "/tmp/auth-before.dump")
+    Docker-Checked @("exec", $container, "pg_dump", "-U", "auth_test_owner", "-d", $testDatabase, "-Fc", "-f", "/tmp/auth-before.dump")
     Docker-Checked @("exec", $container, "pg_dumpall", "-U", "auth_test_owner", "--globals-only", "--no-role-passwords", "-f", "/tmp/auth-globals-before.sql")
     Docker-Checked @("cp", "${container}:/tmp/auth-before.dump", (Join-Path $state "auth-before.dump"))
     Docker-Checked @("cp", "${container}:/tmp/auth-globals-before.sql", (Join-Path $state "auth-globals-before.sql"))

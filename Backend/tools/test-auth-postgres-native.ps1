@@ -2,13 +2,14 @@
 param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\18\bin',
     [string]$Python,
-    [ValidateSet('tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
+    [ValidateSet('tests/test_c06_result_store_postgres.py', 'tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
                  'tests/test_users_postgres.py', 'tests/test_departments_postgres.py', 'tests/test_usage_postgres.py')]
     [string]$TestFile = 'tests/test_role_policies_postgres.py'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-isolation.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$testDatabase = if ($TestFile -eq 'tests/test_c06_result_store_postgres.py') { 'c06_result_test' } else { 'auth_test_db' }
 if (-not $Python) { $Python = Join-Path $repo '.local/rbac-venv/Scripts/python.exe' }
 $Python = Resolve-TestExecutable $Python
 foreach ($binary in @('initdb.exe', 'pg_ctl.exe', 'createdb.exe', 'pg_dump.exe', 'pg_dumpall.exe', 'pg_restore.exe')) {
@@ -47,12 +48,12 @@ try {
         '-o', "-h 127.0.0.1 -p $port", '-w', 'start')
     $env:PGPASSWORD = $password
     $connection = @('-h', '127.0.0.1', '-p', "$port", '-U', 'auth_test_owner')
-    Checked 'createdb.exe' ($connection + @('auth_test_db'))
-    Checked 'pg_dump.exe' ($connection + @('-d', 'auth_test_db', '-Fc', '-f', (Join-Path $state 'before.dump')))
+    Checked 'createdb.exe' ($connection + @($testDatabase))
+    Checked 'pg_dump.exe' ($connection + @('-d', $testDatabase, '-Fc', '-f', (Join-Path $state 'before.dump')))
     Checked 'pg_dumpall.exe' ($connection + @('--globals-only', '--no-role-passwords', '-f', (Join-Path $state 'globals-before.sql')))
     Checked 'pg_restore.exe' @('--list', (Join-Path $state 'before.dump'))
     $urlFile = Join-Path $state 'admin.json'
-    @{url="postgresql+psycopg://auth_test_owner:${password}@127.0.0.1:${port}/auth_test_db"} |
+    @{url="postgresql+psycopg://auth_test_owner:${password}@127.0.0.1:${port}/$testDatabase"} |
         ConvertTo-Json | Set-Content -LiteralPath $urlFile
     $env:RUN_DEVELOPMENT_PROVISIONING = $null
     $env:DEV_BACKUP_ACK = $null
