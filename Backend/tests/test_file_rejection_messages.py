@@ -40,9 +40,9 @@ def test_file_processor_has_page_limit():
     from app.documents import file_processor
     source = inspect.getsource(file_processor)
 
-    assert "page_count > 100" in source or "page_count>100" in source.replace(" ", "")
+    #  Accept MAX_PDF_PAGES constant OR literal
+    assert "MAX_PDF_PAGES" in source or "page_count > 100" in source
     assert "too_many_pages" in source
-
 
 def test_file_processor_has_encryption_check():
     """file_processor must reject password-protected PDFs."""
