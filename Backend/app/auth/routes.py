@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -50,6 +51,21 @@ def development_login(body: LoginRequest, request: Request,
     token = login(session, settings, body.email, body.password.get_secret_value(),
                   request.client.host if request.client else "unknown")
     return TokenResponse(access_token=token, expires_in=settings.session_seconds)
+
+
+@router.post("/dev/token", response_model=TokenResponse,
+             summary="Development-only Swagger sign-in")
+def development_swagger_token(
+    request: Request,
+    form: OAuth2PasswordRequestForm = Depends(),
+    settings=Depends(require_development_auth),
+    session: Session = Depends(get_central_session),
+):
+    """Form adapter only: shares JSON login's limiter, identity and session logic."""
+    if not 3 <= len(form.username) <= 255 or not 1 <= len(form.password) <= 128:
+        raise HTTPException(422, "Invalid request data")
+    body = LoginRequest(email=form.username, password=form.password)
+    return development_login(body, request, settings, session)
 
 
 @router.get("/me", response_model=UserProfile)

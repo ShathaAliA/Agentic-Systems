@@ -31,7 +31,7 @@ including /health/db, use Cache-Control: no-store. Driver errors are sanitized.
 
 ## Explicit operation inventory
 
-`tests/core_access_contract.py` contains the same 43 method/path cases with valid
+`tests/core_access_contract.py` contains the same 44 method/path cases with valid
 request templates. The inventory gate inspects effective runtime routes, including
 routes hidden from OpenAPI, rejects unclassified or duplicate operations, and
 requires the validated-authentication dependency on every protected operation.
@@ -42,6 +42,7 @@ Tests do not add a runtime universal authorization bypass or trust a role header
 | GET | `/` | public |
 | GET | `/health` | public |
 | POST | `/auth/dev/login` | login |
+| POST | `/auth/dev/token` | login |
 | GET | `/health/db` | core_admin |
 | GET | `/auth/me` | self |
 | POST | `/auth/logout` | self |
