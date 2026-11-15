@@ -73,8 +73,11 @@ def test_audit_failure_rolls_back_mapping_version_sessions(users):
         s.add(RoleAssignment(user_id="employee", role_id="employee-user", department_id="hr"))
         s.commit()
     with patch.object(service, "RolePolicyAudit", side_effect=RuntimeError("synthetic audit failure")):
-        with pytest.raises(RuntimeError):
-            put(c, h["admin"])
+        response = put(c, h["admin"])
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Internal server error"}
+        assert response.headers["cache-control"] == "no-store"
+        assert "synthetic audit failure" not in response.text
     with Session(e) as s:
         assert s.get(RolePolicy, "employee-user") is None
         assert service.snapshot(s, "employee-user")["permissions"] == ["documents:read"]

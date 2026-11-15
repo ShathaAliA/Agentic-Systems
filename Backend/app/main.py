@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,6 +13,7 @@ from app.users.routes import router as users_router
 from app.users.routes import administrator
 from app.usage.routes import router as usage_router
 from app.role_policies.routes import router as role_policies_router
+from app.response_security import ResponseSecurityMiddleware
 
 
 def create_app(*, central_engine=None, auth_settings=None):
@@ -26,13 +27,7 @@ def create_app(*, central_engine=None, auth_settings=None):
     app.include_router(usage_router)
     app.include_router(role_policies_router)
 
-    @app.middleware("http")
-    async def prevent_auth_caching(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path == "/health/db" or request.url.path.startswith(("/auth/", "/admin/", "/me/", "/departments/")):
-            response.headers["Cache-Control"] = "no-store"
-            response.headers["Pragma"] = "no-cache"
-        return response
+    app.add_middleware(ResponseSecurityMiddleware)
 
     @app.exception_handler(RequestValidationError)
     async def safe_validation_error(request, exc):
