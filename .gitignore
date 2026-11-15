@@ -1,28 +1,51 @@
-# Environment variables
+# Environment variables; only non-secret templates may be tracked.
 .env
 .env.*
 !.env.example
 !.env.*.example
 
-# Python virtual environments
+# Python virtual environments and caches
 .venv/
 venv/
-
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 
-# IDE and Local Storage
-.vscode/
+# Private local state, editor settings and generated application data
 .local/
+.vscode/
 node_modules/
 chroma_db/
 uploads/
 storage/
+.credentials/
 
-# Logs and Backups
+# Logs and recovery artifacts
 *.log
 *.dump
 *.backup
+
+# PoC scripts — local state only; shared scripts are tracked
+scripts/.poc_state.json
+scripts/test_router_isolated.py
+scripts/test_tenant_migration.py
+
+# Test samples are regenerable
+tests/samples/
+
+# Phase 1 — files are committed at poc/phase1 (not phase1/)
+phase1/
+
+# Local diagnostic scripts (legacy)
+Backend/add_department.py
+Backend/add_user.py
+Backend/check_db.py
+Backend/check_departments.py
+Backend/check_hr_schema.py
+Backend/check_tables.py
+Backend/create_hr_tables.py
+Backend/create_hr_tables_direct.py
+Backend/create_tables.py
+Backend/enable_vector.py
+Backend/grant_admin.py

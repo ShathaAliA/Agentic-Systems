@@ -52,9 +52,9 @@ The document developer must:
    grants: business tables require an explicit reviewed policy through the Core
    adapter interface. Tables omitted from that policy have no runtime rights;
    metadata remains SELECT-only, and future objects get no automatic grants.
-   The worker does not yet receive a business privilege policy from the tenant
-   contract. A ready business schema therefore fails with runtime_grant_policy_missing
-   until that contract and its forwarding are jointly implemented/reviewed in 3.3.
+   Subtask 3.3 forwards explicit `table_privileges` and `sequence_privileges` from
+   an operator-owned `contract_version: 1` file. The real document policy and
+   migrations still require joint review; no business readiness is implied.
    No document-specific policy is inferred here. Views, other schemas, columns,
    functions and extensions such as pgvector need a contract extension/review.
 
@@ -65,6 +65,9 @@ department is reprocessed if its contract hash changes, preventing a foundation
 stamp from satisfying a later document contract. Stop routing/quiesce the tenant
 before deploying a changed contract, run the worker, then resume only when active.
 Long-running polling workers load the contract at startup; restart them on change.
+The V1 schema, validation rules and proposed API boundary are documented in
+[the integration contract](document-integration-contract.md). Invalid/unreadable or
+unsupported contracts fail closed with bounded errors; never put credentials in JSON.
 
 Migrations run on a supplied connection under SET LOCAL ROLE of the NOLOGIN owner,
 in a transaction. The worker verifies target revision, required-table existence,

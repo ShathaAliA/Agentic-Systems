@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "maximum": 1,
+      "minimum": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "ready": {
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "required_revision": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_]{0,62}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Required Revision"
+    },
+    "required_tables": {
+      "items": {
+        "pattern": "^[a-z_][a-z0-9_]{0,62}$",
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Required Tables",
+      "type": "array"
+    },
+    "table_privileges": {
+      "maxProperties": 128,
+      "patternProperties": {
+        "^[a-z_][a-z0-9_]{0,62}$": {
+          "items": {
+            "enum": [
+              "SELECT",
+              "INSERT",
+              "UPDATE",
+              "DELETE"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "Table Privileges",
+      "type": "object"
+    },
+    "sequence_privileges": {
+      "maxProperties": 128,
+      "patternProperties": {
+        "^[a-z_][a-z0-9_]{0,62}$": {
+          "items": {
+            "enum": [
+              "USAGE",
+              "SELECT"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "Sequence Privileges",
+      "type": "object"
+    },
+    "pending": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pending"
+    }
+  },
+  "required": [
+    "contract_version",
+    "ready",
+    "required_revision",
+    "required_tables",
+    "table_privileges",
+    "sequence_privileges"
+  ],
+  "title": "TenantContract",
+  "type": "object",
+  "$id": "urn:ai-platform:tenant-contract:1"
+}

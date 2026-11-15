@@ -12,7 +12,8 @@ from app.auth.config import AuthSettings
 from app.main import create_app
 from app.usage import service as u
 from app.usage.models import ProviderAttempt, UsageEntry, UsagePolicy, UsageRequest
-from app.usage.processor import transaction
+from app.usage.processor import ProviderReceipt, transaction
+from app.usage.question_adapter import QuestionCommand, execute_question
 from test_authentication import login_headers
 from test_authentication_postgres import isolated_postgres, pytestmark
 from test_users import seed_user_admin
@@ -44,6 +45,48 @@ def accounting(accounting_pg):
 
 def admit(runtime, key, quote=100, user="employee"):
     return transaction(runtime, lambda s: u.reserve(s, user, key, "a" * 64, quote, now=NOW))
+
+
+def test_question_adapter_concurrent_delivery_dispatches_once(accounting):
+    from threading import Event, Lock
+    _, runtime, _ = accounting
+    command = QuestionCommand(request_key="adapter-concurrent", question="synthetic question",
+        department_ids=("hr",), context_revision="isolated-context-v1")
+    started, release, guard = Event(), Event(), Lock()
+    stored, calls = {}, []
+    def process(context):
+        with guard:
+            calls.append(context.request_id)
+        started.set()
+        assert release.wait(timeout=15)
+        context.perform("generation", "fake", "model", 100, lambda key: ProviderReceipt(key, 7))
+        with guard:
+            stored[("employee", context.request_id)] = {"answer": "synthetic"}
+        return "no_answer"
+    def load(user, identity):
+        with guard:
+            return stored.get((user, identity))
+    def execute():
+        return execute_question(runtime, authenticated_user_id="employee", command=command,
+            estimated_micro_usd=100, authorize_content=lambda *_: True,
+            process=process, load_response=load)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        first = pool.submit(execute)
+        try:
+            assert started.wait(timeout=15)
+            duplicates = list(pool.map(lambda _: execute(), range(7)))
+            assert all(row.receipt.replayed and row.receipt.state == "running"
+                       and row.response is None for row in duplicates)
+        finally:
+            release.set()
+        assert first.result(timeout=15).response == {"answer": "synthetic"}
+    replay = execute()
+    assert replay.receipt.replayed and replay.response == {"answer": "synthetic"}
+    assert len(calls) == 1
+    with Session(runtime) as session:
+        assert session.scalar(select(func.count()).select_from(UsageRequest)) == 1
+        assert session.scalar(select(func.sum(UsageEntry.question_delta))) == -1
+        assert session.scalar(select(func.sum(UsageEntry.cost_micro_usd))) == 7
 
 
 def test_concurrent_duplicate_delivery_counts_and_holds_once(accounting):

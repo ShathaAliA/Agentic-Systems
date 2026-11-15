@@ -2,12 +2,22 @@
 services:
   backend:
     profiles: [backend]
-    build: ./Backend
-    image: ai-platform-day1:dev
+    build:
+      context: ./Backend
+      target: runtime
+    image: ai-platform-core:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
     environment:
       APP_ENV: development
       AUTH_MODE: ${AUTH_MODE:-disabled}
       AUTH_SESSION_SECONDS: ${AUTH_SESSION_SECONDS:-900}
+      AUTH_LOGIN_WINDOW_SECONDS: ${AUTH_LOGIN_WINDOW_SECONDS:-60}
+      AUTH_LOGIN_ACCOUNT_LIMIT: ${AUTH_LOGIN_ACCOUNT_LIMIT:-5}
+      AUTH_LOGIN_IP_LIMIT: ${AUTH_LOGIN_IP_LIMIT:-20}
+      AUTH_LOGIN_GLOBAL_LIMIT: ${AUTH_LOGIN_GLOBAL_LIMIT:-100}
       DATABASE_URL_FILE: /run/secrets/api_url
       DEPARTMENT_CREDENTIALS_DIR: /credentials
       DB_HOST: postgres
@@ -21,13 +31,25 @@ services:
         volume:
           subpath: day1/tenants
     ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
   provisioning-worker:
     profiles: [provisioning]
-    build: ./Backend
-    image: ai-platform-day1:dev
+    build:
+      context: ./Backend
+      target: runtime
+    image: ai-platform-core:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
     entrypoint: [python, -m, app.provisioning.worker]
     command: []
     environment:

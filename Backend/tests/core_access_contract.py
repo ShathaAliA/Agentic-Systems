@@ -55,6 +55,13 @@ OPERATIONS = [
     Operation("GET", "/admin/usage/ledger", "core_admin"),
     Operation("GET", "/admin/usage/unresolved", "core_admin"),
 ]
+# Documents remain tenant-scoped; these entries also join the invalid-identity matrix.
+OPERATIONS += [Operation(method, "/api/documents" + path, "document") for method, path in [
+    ("POST", "/upload"), ("POST", "/{document_id}/approve"), ("POST", "/{document_id}/revise"),
+    ("POST", "/ask"), ("GET", "/"), ("GET", "/download/{document_id}"),
+    ("DELETE", "/{document_id}"), ("GET", "/{document_id}"), ("PATCH", "/{document_id}"),
+    ("POST", "/{document_id}/version"), ("POST", "/{document_id}/permissions"),
+    ("GET", "/{document_id}/permissions"), ("DELETE", "/{document_id}/permissions/{audience_id}")]]
 TOOLING = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 PROTECTED = [op for op in OPERATIONS if op.policy not in {"public", "login"}]
 ADMIN = [op for op in OPERATIONS if op.policy in {"core_admin", "department_admin"}]
@@ -62,7 +69,7 @@ ADMIN = [op for op in OPERATIONS if op.policy in {"core_admin", "department_admi
 
 def path_for(op):
     return op.path.format(user_id="outsider", department_id="finance", grant_id="missing",
-                          role_id="employee-user", assignment_id="missing")
+                          role_id="employee-user", assignment_id="missing", document_id=1, audience_id=1)
 
 
 def request(client, op, headers):

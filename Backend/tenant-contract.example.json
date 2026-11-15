@@ -1,6 +1,9 @@
 {
+  "contract_version": 1,
   "ready": false,
   "required_revision": null,
   "required_tables": [],
-  "pending": "Document developer must supply versioned tenant migrations and required tables; tenant_0001 is foundation only."
+  "table_privileges": {},
+  "sequence_privileges": {},
+  "pending": "Draft only. Real document migrations, reviewed privileges and joint approval are pending."
 }

@@ -42,7 +42,6 @@ def get_db():
 
 # --- استيراد الموديلز عشان Alembic يتعرف عليها ---
 from app.models import Base, User, Department, DepartmentMembership, Role, Permission, RolePermission, RoleAssignment, DepartmentDatabase
-from app.documents.models import Document, DocumentChunk, DocumentAuditLog, DocumentVersion, DocumentRevisionLog
 
 
 from app.database_router import authorized_department_session

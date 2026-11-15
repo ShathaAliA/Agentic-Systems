@@ -8,12 +8,21 @@ Verifies:
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import create_app
+from app.auth.config import AuthSettings
+from app.models import Base
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture(scope="module")
 def client():
-    return TestClient(app)
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with TestClient(create_app(central_engine=engine,
+            auth_settings=AuthSettings(mode="development_password", app_env="test"))) as client:
+        yield client
+    engine.dispose()
 
 
 def test_list_documents_no_auth_returns_401_or_403(client):

@@ -4,10 +4,17 @@ from sqlalchemy.orm import Session
 import shutil
 import os
 import uuid
+import hashlib
 import logging
+from pydantic import ValidationError
+from fastapi import Request
+from sqlalchemy import select
+from app.usage.question_adapter import QuestionCommand, execute_question
+from app.usage.processor import ConfirmedTechnicalFailure
+from app.usage.service import UsageError
+from app.documents import result_store, provider_accounting
 
-from app.database import get_central_db
-from app.database_router import authorized_department_session
+from app.auth.dependencies import get_central_session as get_central_db
 from app.documents.models import (
     Document,
     DocumentAuditLog,
@@ -20,7 +27,9 @@ from app.documents.audience_service import (
     filter_visible_documents,
     user_can_access_document,
 )
-from app.documents.file_processor import process_file
+def process_file(*args, **kwargs):
+    from app.documents.file_processor import process_file as implementation
+    return implementation(*args, **kwargs)
 from app.documents import rag_service
 from app.auth.dependencies import get_current_user
 from app.models import User
@@ -31,10 +40,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# رسائل آمنة لمستخدم عند رفض الملف (لا تكشف تفاصيل داخلية)
 REJECTION_MESSAGES = {
     "unsupported_file_type": "نوع الملف غير مدعوم.",
     "extension_mismatch": "امتداد الملف لا يطابق محتواه. يرجى التأكد من الملف.",
@@ -47,6 +54,7 @@ REJECTION_MESSAGES = {
 
 
 def _open_department_session(user_id: str, department_id: str, permission_code: str):
+    from app.database_router import authorized_department_session
     try:
         return authorized_department_session(
             user_id=user_id,
@@ -55,11 +63,11 @@ def _open_department_session(user_id: str, department_id: str, permission_code: 
         )
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
-    except ValueError as e:
-        logger.warning("Department session rejected: %s", e)
+    except ValueError:
+        logger.warning("Department session rejected")
         raise HTTPException(status_code=403, detail="Department not available")
-    except RuntimeError as e:
-        logger.exception("Department engine failure: %s", e)
+    except RuntimeError:
+        logger.error("Department engine unavailable")
         raise HTTPException(status_code=503, detail="Service temporarily unavailable")
 
 
@@ -84,6 +92,7 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="حجم الملف يتجاوز 20 ميجابايت")
 
     file_ext = os.path.splitext(file.filename)[1].lower()
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     temp_filename = f"temp_{uuid.uuid4()}{file_ext}"
     temp_path = os.path.join(UPLOAD_DIR, temp_filename)
 
@@ -170,7 +179,6 @@ async def upload_document(
             ))
             db.commit()
 
-            # ✅ PR5: تمرير pages للحفاظ على المواقع الحقيقية
             chunks = rag_service.chunk_text(extracted_text)
             if chunks:
                 rag_service.process_and_store_chunks(
@@ -296,7 +304,6 @@ async def revise_document(
 
             new_chunks = rag_service.chunk_text(new_text)
             if new_chunks:
-                # revise لا يملك pages — نمرر None (fallback إلى page 1)
                 rag_service.process_and_store_chunks(
                     db,
                     doc.id,
@@ -326,94 +333,81 @@ async def revise_document(
 
 
 # ------------------------------------------------------------------
-# Ask (with request_key + U1 placeholder)
+# Ask (with U1 + persisted result)
 # ------------------------------------------------------------------
 @router.post("/ask")
-async def ask_question(
+def ask_question(
+    request: Request,
     query: str,
     department_id: str,
-    request_key: str | None = None,
+    request_key: str,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not has_permission(central_db, current_user.id, "documents:read", department_id):
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    # TODO(integration): U1 idempotency
-    # When U1 interface is available, wrap this call with:
-    #   reservation = u1.reserve(user_id=current_user.id,
-    #                            request_key=request_key,
-    #                            department_id=department_id)
-    #   try:
-    #       ... existing logic ...
-    #       u1.commit(reservation, outcome="answered" | "no_answer")
-    #   except TechnicalError:
-    #       u1.refund(reservation)
-    # The client MUST send the same request_key on retries to prevent
-    # duplicate charges. request_key=None means legacy behavior (no billing).
-    # The client NEVER sends tokens/cost; U1 computes them internally.
-
-    user_depts, user_roles = get_user_context(central_db, current_user.id)
-
     try:
-        with _open_department_session(
-            user_id=current_user.id,
-            department_id=department_id,
-            permission_code="documents:read",
-        ) as db:
-            context_chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
-            if not context_chunks:
-                return {
-                    "query": query,
-                    "answer": "لم يتم العثور على معلومات ذات صلة في قاعدة البيانات.",
-                    "sources": [],
-                    "request_key": request_key,
-                }
+        settings = provider_accounting.Settings.from_environment()
+        command = QuestionCommand(request_key=request_key, question=query,
+            department_ids=(department_id,), context_revision=settings.context_revision)
+        central_engine = request.app.state.central_engine or central_db.get_bind()
 
-            allowed_chunks = []
-            for c in context_chunks:
-                doc_id = c.get("document_id")
-                if doc_id is None or user_can_access_document(db, doc_id, user_depts, user_roles):
-                    allowed_chunks.append(c)
+        def context_for_user():
+            # New session after processing: no stale membership/role snapshot.
+            with Session(central_engine) as session:
+                return get_user_context(session, current_user.id, department_id)
 
-            if not allowed_chunks:
-                return {
-                    "query": query,
-                    "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
-                    "sources": [],
-                    "request_key": request_key,
-                }
+        def process(ctx):
+            departments, roles = context_for_user()
+            with _open_department_session(current_user.id, department_id, "documents:read") as db:
+                chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+                allowed = [c for c in chunks if type(c.get("document_id")) is int
+                    and user_can_access_document(db, c["document_id"], departments, roles)]
+                payload = {"status": "no_answer", "query": query,
+                    "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.", "sources": []}
+                if allowed:
+                    context = "\n\n".join(c["content"] for c in allowed)
+                    if len(provider_accounting.prompt_for(query, context).encode("utf-8")) + 512 > settings.input_limit:
+                        raise ConfirmedTechnicalFailure()  # before authorizing/dispatching
+                    def call(attempt_id):
+                        answer, receipt = provider_accounting.generate(settings, query, context, attempt_id)
+                        payload.update(status="answered", answer=answer, sources=[{
+                            "document_id": c["document_id"], "document": c["document_name"],
+                            "chunk_id": c["chunk_id"], "version_number": c["version_number"],
+                            "location": c.get("page_number")} for c in allowed])
+                        return receipt
+                    ctx.perform("generation", "openai", settings.model, settings.envelope, call)
+                result_store.save(db, current_user.id, ctx.request_id, payload)
+                db.commit()
+                return payload["status"]
 
-            context = "\n\n".join([c["content"] for c in allowed_chunks])
-            try:
-                answer = rag_service.generate_answer(query, context)
-            except Exception as e:
-                logger.exception("Provider error: %s", e)
-                raise HTTPException(
-                    status_code=502,
-                    detail="تعذر الحصول على إجابة من المزود. يرجى المحاولة لاحقاً.",
-                )
+        def load(user_id, identity):
+            departments, roles = context_for_user()
+            with _open_department_session(user_id, department_id, "documents:read") as db:
+                return result_store.load(db, user_id, identity, department_id, departments, roles)
 
-            return {
-                "query": query,
-                "answer": answer,
-                "sources": [
-                    {
-                        "document": c["document_name"],
-                        "chunk_id": c["chunk_id"],
-                        "version": c.get("version"),
-                        "version_number": c.get("version_number"),
-                        "location": c.get("page_number"),
-                    }
-                    for c in allowed_chunks
-                ],
-                "request_key": request_key,
-            }
+        def authorize_content(user_id, cmd):
+            if (user_id != current_user.id or cmd.department_ids != (department_id,)
+                    or cmd.context_revision != settings.context_revision):
+                return False
+            with Session(central_engine) as session:
+                return has_permission(session, user_id, "documents:read", department_id)
+
+        result = execute_question(central_engine, authenticated_user_id=current_user.id,
+            command=command, estimated_micro_usd=settings.envelope,
+            authorize_content=authorize_content,
+            process=process, load_response=load)
+        if result.response is not None:
+            return {**result.response, "request_key": request_key, "replayed": result.receipt.replayed}
+        if result.receipt.state == "refunded":
+            raise HTTPException(503, "تعذر إكمال الطلب. تم إرجاع الرصيد.")
+        raise HTTPException(409, "الطلب قيد المعالجة أو يحتاج التحقق؛ لم يُعَد تنفيذه.")
+    except UsageError as error:
+        raise HTTPException(error.status, error.code) from None
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception("Ask error: %s", e)
-        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+    except ValidationError:
+        raise HTTPException(422, "Invalid question data") from None
+    except Exception:
+        raise HTTPException(503, "Question service unavailable") from None
 
 
 # ------------------------------------------------------------------
@@ -428,7 +422,7 @@ async def list_documents(
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    user_depts, user_roles = get_user_context(central_db, current_user.id)
+    user_depts, user_roles = get_user_context(central_db, current_user.id, department_id)
 
     try:
         with _open_department_session(
@@ -549,7 +543,7 @@ async def delete_document(
 
 
 # ------------------------------------------------------------------
-# B2: Get document metadata
+# B2: Get metadata
 # ------------------------------------------------------------------
 @router.get("/{document_id}")
 async def get_document(
@@ -561,7 +555,7 @@ async def get_document(
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    user_depts, user_roles = get_user_context(central_db, current_user.id)
+    user_depts, user_roles = get_user_context(central_db, current_user.id, department_id)
 
     try:
         with _open_department_session(
@@ -575,10 +569,8 @@ async def get_document(
             ).first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
-
             if not user_can_access_document(db, doc.id, user_depts, user_roles):
                 raise HTTPException(status_code=403, detail="Permission denied")
-
             return {
                 "id": doc.id,
                 "filename": doc.filename,
@@ -595,7 +587,7 @@ async def get_document(
 
 
 # ------------------------------------------------------------------
-# B2: Update document metadata
+# B2: PATCH metadata
 # ------------------------------------------------------------------
 @router.patch("/{document_id}")
 async def update_document_metadata(
@@ -633,7 +625,6 @@ async def update_document_metadata(
                 version_number=doc.version,
             ))
             db.commit()
-
             return {
                 "status": "success",
                 "message": "تم تحديث بيانات المستند.",
@@ -648,7 +639,7 @@ async def update_document_metadata(
 
 
 # ------------------------------------------------------------------
-# B2: Replace document (new version)
+# B2: Replace document
 # ------------------------------------------------------------------
 @router.post("/{document_id}/version")
 async def replace_document_version(
@@ -681,10 +672,7 @@ async def replace_document_version(
         logger.exception("Replace error processing file %s: %s", temp_path, e)
         if os.path.exists(temp_path):
             os.remove(temp_path)
-        raise HTTPException(
-            status_code=400,
-            detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.",
-        )
+        raise HTTPException(status_code=400, detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.")
 
     if result["status"] != "accepted":
         if os.path.exists(temp_path):
@@ -717,7 +705,6 @@ async def replace_document_version(
 
             old_version = doc.version
             new_version_number = old_version + 1
-
             extracted_text = result["extraction"].get("original_text", "") or ""
 
             db.add(DocumentRevisionLog(
@@ -744,9 +731,7 @@ async def replace_document_version(
             new_chunks = rag_service.chunk_text(extracted_text)
             if new_chunks:
                 rag_service.process_and_store_chunks(
-                    db,
-                    doc.id,
-                    new_chunks,
+                    db, doc.id, new_chunks,
                     version_number=new_version_number,
                     pages=result["extraction"].get("pages"),
                 )
@@ -772,7 +757,7 @@ async def replace_document_version(
 
 
 # ------------------------------------------------------------------
-# B2: Manage audiences
+# B2: Audiences
 # ------------------------------------------------------------------
 @router.post("/{document_id}/permissions")
 async def add_document_audience(
@@ -789,7 +774,7 @@ async def add_document_audience(
     if audience_department_id is None and audience_role_id is None:
         raise HTTPException(
             status_code=400,
-            detail="يجب تحديد قسم أو دور (أو كلاهما).",
+            detail="حدد قسماً أو دوراً (أو كلاهما).",
         )
 
     try:
@@ -829,7 +814,6 @@ async def add_document_audience(
             ))
             db.commit()
             db.refresh(audience)
-
             return {"status": "success", "audience_id": audience.id}
     except HTTPException:
         raise
@@ -918,7 +902,6 @@ async def delete_document_audience(
                 version_number=None,
             ))
             db.commit()
-
             return {"status": "success", "message": "تم حذف الجمهور."}
     except HTTPException:
         raise

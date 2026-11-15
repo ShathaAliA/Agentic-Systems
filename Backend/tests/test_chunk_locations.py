@@ -16,27 +16,8 @@ pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND / "tenant_alembic.ini"
-ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
-
-
-@pytest.fixture(scope="module")
-def fresh_db():
-    hex_ = uuid.uuid4().hex
-    db_name = f"dept_{hex_}"
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-        c.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin.dispose()
-
-    url = f"postgresql+psycopg://postgres:postgres@127.0.0.1:5435/{db_name}"
-    yield {"db_name": db_name, "url": url}
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    admin.dispose()
+from document_test_infrastructure import fresh_db
+from test_authentication_postgres import isolated_postgres
 
 
 def test_chunks_preserve_page_numbers(fresh_db):

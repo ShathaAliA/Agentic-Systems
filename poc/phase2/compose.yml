@@ -1,0 +1,83 @@
+# Independent Phase 2A project. Never combine with root or Phase 1 Compose files.
+name: ${POC2_PROJECT:?Use the controller with a new run}
+services:
+  database:
+    image: pgvector/pgvector:pg17@sha256:7d0a41464797aeb9862dfdc0bbf1526b82cfd324cdd8036df19e3545f4a9ccb8
+    environment:
+      POSTGRES_USER: poc2_bootstrap
+      POSTGRES_DB: poc2_central
+      POSTGRES_PASSWORD_FILE: /run/secrets/bootstrap_password
+    secrets: [bootstrap_password]
+    volumes: [data:/var/lib/postgresql/data]
+    networks: [internal]
+    labels:
+      ai.poc.phase2.run_id: ${POC2_RUN:?Generated run required}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U poc2_bootstrap -d poc2_central"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+  tools:
+    profiles: [tools]
+    build:
+      context: ../../Backend
+      dockerfile: ../poc/phase2/Dockerfile
+      target: test
+    image: ai-poc2-core:test
+    entrypoint: [python, /workspace/poc/phase2/bootstrap.py]
+    command: [--run, "${POC2_RUN}", --operation, bootstrap]
+    user: "${POC2_UID:-10001}:${POC2_GID:-10001}"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [internal]
+    volumes:
+      - .:/workspace/poc/phase2:ro
+      - ${POC2_STATE:?Private generated state required}:/workspace/.local/poc-phase2/${POC2_RUN}
+    environment:
+      PYTHONPATH: /backend
+      POC2_BACKEND_ROOT: /backend
+      PYTHON_DOTENV_DISABLED: "1"
+      APP_ENV: test
+      AUTH_MODE: disabled
+  api:
+    profiles: [api]
+    build:
+      context: ../../Backend
+      dockerfile: ../poc/phase2/Dockerfile
+      target: runtime
+    image: ai-poc2-core:dev
+    entrypoint: [python, /workspace/poc/phase2/server.py]
+    command: [--run, "${POC2_RUN}", --port, "8000", --container]
+    user: "${POC2_UID:-10001}:${POC2_GID:-10001}"
+    cap_drop: [ALL]
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    networks: [internal, loopback]
+    ports: ["127.0.0.1:${POC2_API_PORT:?Generated loopback port required}:8000"]
+    volumes:
+      - .:/workspace/poc/phase2:ro
+      - ${POC2_STATE}/api:/run/poc2-api:ro
+    environment:
+      PYTHONPATH: /backend
+      POC2_BACKEND_ROOT: /backend
+      PYTHON_DOTENV_DISABLED: "1"
+      APP_ENV: test
+      AUTH_MODE: disabled
+      DATABASE_URL_FILE: /run/poc2-api/url.json
+      DEPARTMENT_CREDENTIALS_DIR: /run/poc2-api/tenants
+      DB_HOST: database
+      DB_PORT: "5432"
+secrets:
+  bootstrap_password:
+    file: ${POC2_STATE}/bootstrap-password
+volumes:
+  data:
+    labels:
+      ai.poc.phase2.run_id: ${POC2_RUN}
+networks:
+  internal:
+    internal: true
+  loopback:
+    driver: bridge

@@ -85,10 +85,11 @@ replay preserves database OIDs, credentials and stored synthetic audit data.
 ## Document contract remains a blocker
 
 No business policy has been invented for documents, versions, audits or RAG tables.
-The current worker calls the adapter without a business privilege mapping. A real
-business schema therefore cannot pass provisioning yet, even if someone flips a
-contract ready flag. The document developer and Core must agree and wire the
-reviewed privilege policy into the pinned contract/migration interface in 3.3.
+Subtask 3.3 now forwards the versioned contract's explicit privilege policy to
+grant reconciliation and verification. The real document schema and its reviewed
+policy are still unavailable: flipping a ready flag cannot establish readiness.
+The document developer and Core must agree the pinned migration and policy.
+See document-integration-contract.md for the V1 interface and ownership gates.
 Foundation-only direct test migrations do not make the CLI contract ready.
 
 Views, other schemas, function/extension privileges, column-specific grants and real

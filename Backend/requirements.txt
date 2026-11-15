@@ -42,3 +42,4 @@ openpyxl
 python-pptx
 pillow
 pandas
+magika==1.0.3

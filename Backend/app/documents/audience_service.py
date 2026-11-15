@@ -12,10 +12,12 @@ def user_can_access_document(
     user_role_ids: list[str],
 ) -> bool:
     """
-    Rules:
-      - No audience rows → visible within the caller's authorized department scope.
-      - Otherwise → must match at least one (dept, role) pair.
-        NULL dept = "all departments", NULL role = "all roles".
+    Audience rules (department AND role):
+      - No rows → visible within caller's authorized department scope.
+      - (dept_id, role_id): both must match.
+      - (dept_id, NULL): user in dept, any role.
+      - (NULL, role_id): any dept, user has role.
+      - (NULL, NULL): visible to all (within dept scope already checked).
     """
     if not user_department_ids:
         return False
@@ -25,9 +27,11 @@ def user_can_access_document(
     ).scalars().all()
 
     if not audiences:
-        return True  # legacy: no audiences configured → department scope
+        return True  # legacy: no audiences configured
 
     for a in audiences:
+        if a.department_id is None and a.role_id is None:
+            return True
         dept_match = (a.department_id is None) or (a.department_id in user_department_ids)
         role_match = (a.role_id is None) or (a.role_id in user_role_ids)
         if dept_match and role_match:
@@ -47,17 +51,29 @@ def filter_visible_documents(
     ]
 
 
-def get_user_context(db_central, user_id: str) -> tuple[list[str], list[str]]:
-    """
-    Return (department_ids, role_ids) for the user from the CENTRAL database.
-    Adjust imports below to match app/models/ actual structure.
-    """
-    # ⚠️ عدّلي الاستيرادات بعد رؤية app/models/
-    from app.models import DepartmentMembership, RoleAssignment  # noqa
+def get_user_context(db_central, user_id: str, department_id: str | None = None) -> tuple[list[str], list[str]]:
+    """Return (department_ids, role_ids) for the user from the CENTRAL database."""
+    from app.models import DepartmentMembership, RoleAssignment, Role
+    from sqlalchemy import or_, and_
+    from app.services.authorization import has_permission
+
+    if department_id is not None:
+        if not has_permission(db_central, user_id, "documents:read", department_id):
+            return [], []
+        roles = db_central.scalars(select(RoleAssignment.role_id).join(Role).where(
+            RoleAssignment.user_id == user_id,
+            or_(and_(Role.scope == "global", RoleAssignment.department_id.is_(None)),
+                and_(Role.scope == "department", RoleAssignment.department_id == department_id,
+                    select(DepartmentMembership.id).where(
+                        DepartmentMembership.user_id == user_id,
+                        DepartmentMembership.department_id == department_id,
+                        DepartmentMembership.status == "active").exists())))).all()
+        return [department_id], list(roles)
 
     depts = db_central.execute(
         select(DepartmentMembership.department_id).where(
-            DepartmentMembership.user_id == user_id
+            DepartmentMembership.user_id == user_id,
+            DepartmentMembership.status == "active",
         )
     ).scalars().all()
 

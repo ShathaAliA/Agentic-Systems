@@ -50,13 +50,38 @@ def isolated_postgres():
         (report_dir / "owners-acls-before.json").write_text(json.dumps([list(r) for r in owners], indent=2))
     os.environ["CENTRAL_MIGRATION_DATABASE_URL_FILE"] = os.environ["AUTH_TEST_ADMIN_URL_FILE"]
     cfg = Config("alembic.ini")
-    command.upgrade(cfg, "p002")
+    # Begin at Backend's unchanged historical revision, not an already-Core schema.
+    command.upgrade(cfg, "b8e1db57a78c")
     with admin.connect() as c:
         assert c.scalar(text("SELECT count(*) FROM departments")) == 0  # No production/demo seeds.
     # Insert through the historical schema, before later model columns exist.
     with admin.begin() as c:
         c.execute(text("INSERT INTO users(id,name,email,status,created_at) VALUES ('existing-user','Existing','existing@example.invalid','active',CURRENT_TIMESTAMP)"))
         c.execute(text("INSERT INTO departments(id,name,status) VALUES ('existing-department','Existing Department','failed')"))
+        c.execute(text("INSERT INTO roles(id,name,scope) VALUES ('existing-role','Legacy Synthetic Role','department')"))
+        c.execute(text("INSERT INTO permissions(id,code) VALUES ('existing-permission','legacy:synthetic')"))
+        c.execute(text("INSERT INTO department_memberships(id,user_id,department_id,status) VALUES ('existing-membership','existing-user','existing-department','active')"))
+        c.execute(text("INSERT INTO role_permissions(id,role_id,permission_id) VALUES ('existing-role-permission','existing-role','existing-permission')"))
+        c.execute(text("INSERT INTO role_assignments(id,user_id,role_id,department_id,created_at) VALUES ('existing-assignment','existing-user','existing-role','existing-department',CURRENT_TIMESTAMP)"))
+    historical_columns = {
+        "users": "id,name,email,status,created_at", "departments": "id,name,status",
+        "roles": "id,name,scope,description", "permissions": "id,code,description",
+        "department_memberships": "id,user_id,department_id,status",
+        "role_permissions": "id,role_id,permission_id",
+        "role_assignments": "id,user_id,role_id,department_id,created_at",
+    }
+    def historical_rows(connection):
+        # Identifiers are fixed test constants; no operator or request input.
+        return {table: connection.execute(text(
+            f"SELECT {columns} FROM {table} WHERE id LIKE 'existing-%' ORDER BY id")).all()
+            for table, columns in historical_columns.items()}
+    with admin.connect() as c:
+        historical = historical_rows(c)
+        assert all(len(rows) == 1 for rows in historical.values())
+    command.upgrade(cfg, "p002")
+    with admin.connect() as c:
+        assert historical_rows(c) == historical
+    with admin.begin() as c:
         c.execute(text("INSERT INTO department_databases(id,department_id,database_name,credential_key,status,last_error_code,created_at) VALUES ('existing-registry','existing-department','existing_test_reference','EXISTING_TEST_REFERENCE','failed','tenant_contract_unavailable',CURRENT_TIMESTAMP)"))
     with admin.connect() as c:
         before = {table: c.execute(text(f"SELECT * FROM {table} ORDER BY id")).all()
@@ -69,6 +94,9 @@ def isolated_postgres():
         assert c.scalar(text("SELECT version_num FROM alembic_version")) == "auth001"
     # Application models also include the subsequent additive department metadata.
     command.upgrade(cfg, "head")
+    with admin.connect() as c:
+        assert historical_rows(c) == historical
+        assert c.scalar(text("SELECT status FROM department_databases WHERE id='existing-registry'")) == "failed"
     password = seed_auth_users(admin)
     api_password = secrets.token_urlsafe(32)
     params = dict(host=admin_url.host, port=admin_url.port or 5432, dbname=admin_url.database,

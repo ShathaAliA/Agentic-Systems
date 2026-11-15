@@ -11,7 +11,14 @@ import pytesseract
 import os
 import uuid
 
-detector = Magika()
+detector = None
+
+
+def get_detector():
+    global detector
+    if detector is None:
+        detector = Magika()
+    return detector
 
 SUPPORTED_TYPES = {
     ".pdf": "pdf",
@@ -36,8 +43,8 @@ def detect_file(file_path):
         raise ValueError("File is empty")
     if path.stat().st_size > MAX_FILE_SIZE:
         raise ValueError("File exceeds 20 MB limit")
-    
-    result = detector.identify_path(path)
+
+    result = get_detector().identify_path(path)
     return {
         "file_name": path.name,
         "extension": path.suffix.lower(),
@@ -50,10 +57,10 @@ def validate_file(extension, detected_type):
     expected_type = SUPPORTED_TYPES.get(extension.lower())
     if expected_type is None:
         return {"is_supported": False, "status": "unsupported_file_type"}
-    
+
     if extension.lower() == ".pptx" and detected_type in ("pptx", "presentation", "powerpoint", "zip"):
         return {"is_supported": True, "status": "accepted_for_format_validation"}
-        
+
     if expected_type != detected_type:
         return {
             "is_supported": False,
@@ -165,7 +172,7 @@ def extract_content(file_path, file_type):
     elif file_type == "docx":
         document = Document(str(path))
         text_parts = []
-        
+
         for item in document.iter_inner_content():
             if hasattr(item, "rows"):
                 # تحويل الجدول إلى Markdown
@@ -193,33 +200,33 @@ def extract_content(file_path, file_type):
         prs = Presentation(str(path))
         slides_data = []
         all_text = []
-        
+
         for slide_num, slide in enumerate(prs.slides, start=1):
             slide_texts = []
-            
+
             for shape in slide.shapes:
                 # 1. نص عادي
                 if hasattr(shape, "text") and shape.text.strip():
                     slide_texts.append(shape.text.strip())
-                
+
                 # 2. صورة (OCR)
                 elif shape.shape_type == 13: # PICTURE
                     try:
                         image = shape.image
                         image_bytes = image.blob
                         temp_path = f"temp_{uuid.uuid4()}.png"
-                        
+
                         with open(temp_path, "wb") as f:
                             f.write(image_bytes)
-                        
+
                         ocr_text = pytesseract.image_to_string(Image.open(temp_path), lang='ara+eng')
                         if ocr_text.strip():
                             slide_texts.append(f"[صورة]: {ocr_text.strip()}")
-                        
+
                         os.remove(temp_path)
                     except Exception as e:
                         print(f"OCR Error: {e}")
-            
+
             slide_full_text = "\n".join(slide_texts)
             if slide_full_text:
                 slides_data.append({
