@@ -28,6 +28,10 @@ Missing/invalid/expired/revoked credentials or inactive/unknown identities retur
 Disabled development authentication returns 503 for protected operations.
 Resource-specific 404/409/422 responses follow authorization. Sensitive responses,
 including /health/db, use Cache-Control: no-store. Driver errors are sanitized.
+The C02 response policy also covers slash-delimited sensitive roots (including
+the future `/api/documents` family), redirects and generic unexpected failures.
+It does not register document routes or change this authorization inventory.
+Details and verification: [response security](response-security-c02.md).
 
 ## Explicit operation inventory
 

@@ -9,6 +9,7 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Development verification results and outstanding blockers](Backend/docs/day1-verification.md)
 - [Subtask 2.1: development authentication, enrollment and tests](Backend/docs/authentication.md)
 - [Core transfer C01: Swagger authentication changes and verification](Backend/docs/swagger-auth-transfer.md)
+- [Core C02: response caching and safe error policy](Backend/docs/response-security-c02.md)
 - [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
 - [Subtask 2.3: central users, memberships and approved roles](Backend/docs/users.md)
 - [Independent task U1: question credits, usage and company budget](Backend/docs/usage.md)
