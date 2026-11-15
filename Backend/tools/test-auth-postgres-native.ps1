@@ -7,9 +7,15 @@ param(
     [string]$TestFile = 'tests/test_role_policies_postgres.py'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'test-isolation.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if (-not $Python) { $Python = Join-Path $repo '.local/rbac-venv/Scripts/python.exe' }
+$Python = Resolve-TestExecutable $Python
+foreach ($binary in @('initdb.exe', 'pg_ctl.exe', 'createdb.exe', 'pg_dump.exe', 'pg_dumpall.exe', 'pg_restore.exe')) {
+    $null = Resolve-TestExecutable (Join-Path $PostgresBin $binary)
+}
 $state = Join-Path $repo ('.local/native-auth-tests/' + [Guid]::NewGuid().ToString('N'))
+Assert-TestState $repo 'native-auth-tests' $state
 New-Item -ItemType Directory -Path $state | Out-Null
 $acl = Get-Acl -LiteralPath $state
 $acl.SetAccessRuleProtection($true, $false)
@@ -30,10 +36,7 @@ function Checked([string]$Name, [string[]]$Arguments) {
     & (Join-Path $PostgresBin $Name) @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Native test command failed: $Name" }
 }
-$keys = @('PGPASSWORD', 'RUN_AUTH_POSTGRES_TESTS', 'AUTH_TEST_BACKUP_ACK',
-    'RUN_DEVELOPMENT_PROVISIONING', 'DEV_BACKUP_ACK', 'AUTH_TEST_ADMIN_URL_FILE', 'AUTH_TEST_NATIVE_POSTGRES', 'AUTH_TEST_REPORT_DIR', 'CENTRAL_MIGRATION_DATABASE_URL_FILE')
-$previous = @{}
-foreach ($key in $keys) { $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
+$previous = Enter-IsolatedTestEnvironment
 $startAttempted = $false
 Push-Location (Join-Path $repo 'Backend')
 try {
@@ -62,12 +65,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native PostgreSQL tests failed' }
 } finally {
     $stopFailed = $false
-    if ($startAttempted) {
-        & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data -w stop
-        $stopFailed = $LASTEXITCODE -ne 0
+    try {
+        Assert-TestState $repo 'native-auth-tests' $state
+        if ($startAttempted) {
+            & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data status *> $null
+            $statusCode = $LASTEXITCODE
+            if ($statusCode -eq 0) {
+                & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data -w stop
+                if ($LASTEXITCODE -ne 0) { $stopFailed = $true }
+                & (Join-Path $PostgresBin 'pg_ctl.exe') -D $data status *> $null
+                if ($LASTEXITCODE -ne 3) { $stopFailed = $true }
+            } elseif ($statusCode -ne 3) { $stopFailed = $true }
+        }
+    } catch { $stopFailed = $true }
+    finally {
+        Restore-TestEnvironment $previous
+        Pop-Location
     }
-    foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process') }
-    Pop-Location
     Write-Host "Retained isolated cluster and private recovery artifacts: $state"
     if ($stopFailed) { throw 'Could not confirm isolated PostgreSQL shutdown; retained recovery directory above' }
 }

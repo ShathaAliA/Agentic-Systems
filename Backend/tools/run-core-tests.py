@@ -11,17 +11,18 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract")
+ENVIRONMENT_POLICY = json.loads((Path(__file__).with_name("test-environment-policy.json")).read_text(encoding="utf-8"))
 
 
 def clean_environment(source):
     result = dict(source)
     for key in list(result):
         upper = key.upper()
-        if (upper.startswith(("RUN_", "AUTH_TEST_", "DEV_", "PG", "OPENAI", "GEMINI", "AZURE", "DATABASE_", "CENTRAL_MIGRATION_", "PROVISIONING_", "DEPARTMENT_", "PYTEST_"))
-                or upper in {"DB_HOST", "DB_PORT", "AUTH_MODE", "APP_ENV", "PYTHONPATH", "TENANT_CONTRACT_FILE"}
-                or upper.endswith(("_API_KEY", "_PASSWORD", "_TOKEN", "_SECRET"))):
+        if (upper.startswith(tuple(ENVIRONMENT_POLICY["prefixes"]))
+                or upper in ENVIRONMENT_POLICY["names"]
+                or upper.endswith(tuple(ENVIRONMENT_POLICY["suffixes"]))):
             result.pop(key)
-    result.update(APP_ENV="test", AUTH_MODE="disabled", PYTHONIOENCODING="utf-8", PYTHON_DOTENV_DISABLED="1")
+    result.update(ENVIRONMENT_POLICY["defaults"])
     return result
 
 
@@ -33,11 +34,11 @@ def redact(value):
     return value
 
 
-def restrict_directory(path):
+def restrict_directory(path, *, pwsh="pwsh"):
     path.parent.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
-        subprocess.run(["pwsh", "-NoProfile", "-File", str(ROOT / "Backend" / "tools" / "restrict-test-directory.ps1"),
-                        "-Path", str(path)], check=True, capture_output=True)
+        subprocess.run([pwsh, "-NoProfile", "-File", str(ROOT / "Backend" / "tools" / "restrict-test-directory.ps1"),
+                        "-Path", str(path)], check=True, capture_output=True, env=clean_environment(os.environ))
     else:
         path.mkdir(mode=0o700)
 
@@ -86,7 +87,11 @@ def record_result(name, process, xml, directory, *, isolated=False):
 
 def run(args):
     report = ROOT / ".local" / "core-tests" / uuid.uuid4().hex
-    restrict_directory(report)
+    try:
+        restrict_directory(report, pwsh=args.pwsh)
+    except (OSError, subprocess.CalledProcessError):
+        print("Blocked: cannot establish private test-report directory", flush=True)
+        return 1
     environment = clean_environment(os.environ)
     results = []
     jobs = []

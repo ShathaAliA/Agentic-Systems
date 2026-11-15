@@ -110,7 +110,7 @@ def test_empty_skipped_failed_or_nonzero_results_cannot_be_green(tmp_path, xml, 
 def test_orchestrator_continues_and_reports_failure_without_spawning_infrastructure(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "GROUPS", ("first", "second"))
-    monkeypatch.setattr(runner, "restrict_directory", lambda p: p.mkdir(parents=True))
+    monkeypatch.setattr(runner, "restrict_directory", lambda p, **kwargs: p.mkdir(parents=True))
     attempts = []
     def unavailable(*args, **kwargs):
         attempts.append(args[0])

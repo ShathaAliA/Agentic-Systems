@@ -6,13 +6,18 @@ param(
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'test-isolation.ps1')
+$Docker = Resolve-TestExecutable $Docker
+Assert-LocalTestDocker $Docker
+$testUser = Get-TestClientUser
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $backendRoot = Join-Path $repoRoot "Backend"
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "ai-auth-test-$suffix"
 $network = "ai-auth-network-$suffix"
 $state = Join-Path $repoRoot ".local/auth-tests/$suffix"
-New-Item -ItemType Directory -Path $state -Force | Out-Null
+Assert-TestState $repoRoot 'auth-tests' $state
+New-Item -ItemType Directory -Path $state | Out-Null
 if ($IsWindows) {
     $acl = Get-Acl -LiteralPath $state
     $acl.SetAccessRuleProtection($true, $false)
@@ -41,9 +46,13 @@ function Docker-Checked {
     if ($LASTEXITCODE -ne 0) { throw "Docker test infrastructure command failed" }
 }
 
+$containerAttempted = $false
+$previous = Enter-IsolatedTestEnvironment
 try {
-    Docker-Checked @("network", "create", "--internal", $network)
+    Docker-Checked @("network", "create", "--internal", "--label", "ai-platform-test-run=$suffix", $network)
+    $containerAttempted = $true
     Docker-Checked @("run", "-d", "--name", $container, "--network", $network,
+        "--label", "ai-platform-test-run=$suffix",
         "--mount", "type=bind,source=$state,target=/run/auth-test,readonly",
         "-e", "POSTGRES_USER=auth_test_owner", "-e", "POSTGRES_DB=auth_test_db",
         "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
@@ -64,20 +73,37 @@ try {
     # Verify archive readability; this is a fresh empty test database, not company data.
     Docker-Checked @("exec", $container, "pg_restore", "--list", "/tmp/auth-before.dump")
     Docker-Checked @("run", "--rm", "--network", $network,
+        "--user", $testUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
         "--mount", "type=bind,source=$backendRoot,target=/repo/Backend,readonly",
         "--mount", "type=bind,source=$(Join-Path $repoRoot 'pytest.ini'),target=/repo/pytest.ini,readonly",
         "--mount", "type=bind,source=$(Join-Path $repoRoot 'conftest.py'),target=/repo/conftest.py,readonly",
         "--workdir", "/repo/Backend",
         "--mount", "type=bind,source=$state,target=/reports",
+        "-e", "APP_ENV=test", "-e", "AUTH_MODE=disabled", "-e", "PYTHON_DOTENV_DISABLED=1",
         "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
         "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", $Image,
         "python", "-m", "pytest", "-q", $TestFile, "--isolated-postgres", "--junitxml=/reports/results.xml", "--tb=short", "-p", "no:cacheprovider")
 }
 finally {
     # Preserve the stopped test container and recovery artifacts. Never delete a database.
-    & $Docker stop $container *> $null
-    $stopFailed = $LASTEXITCODE -ne 0
-    Write-Host "Stopped isolated test container: $container"
+    $stopFailed = $false
+    try {
+        Assert-TestState $repoRoot 'auth-tests' $state
+        if ($containerAttempted) {
+            $owner = & $Docker inspect --format '{{index .Config.Labels "ai-platform-test-run"}}' $container 2>$null
+            if ($LASTEXITCODE -ne 0 -or $owner -ne $suffix) {
+                # Ambiguous creation failure: never stop a resource without ownership proof.
+                $stopFailed = $true
+            } else {
+                & $Docker stop $container *> $null
+                if ($LASTEXITCODE -ne 0) { $stopFailed = $true }
+                $running = & $Docker inspect --format '{{.State.Running}}' $container 2>$null
+                if ($LASTEXITCODE -ne 0 -or $running -ne 'false') { $stopFailed = $true }
+                if (-not $stopFailed) { Write-Host "Stopped isolated test container: $container" }
+            }
+        }
+    } catch { $stopFailed = $true }
+    finally { Restore-TestEnvironment $previous }
     Write-Host "Private recovery artifacts: $state"
     Write-Host "No ports published; existing development databases were not targeted."
     if ($stopFailed) { throw 'Could not confirm isolated Docker container shutdown' }
