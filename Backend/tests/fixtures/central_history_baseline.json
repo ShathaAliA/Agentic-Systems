@@ -1,0 +1,43 @@
+{
+  "source": "Core@05308c0",
+  "reviewed_at": "2026-11-15",
+  "purpose": "Historical source integrity only; no database readiness claim",
+  "files": [
+    {
+      "name": "a82f31_create_central_users_departments_and_rbac.py",
+      "sha256": "1b03f182229a61bc1e3bb4d275bb5fb3df843ba803b798d4c00cd873b19a764e"
+    },
+    {
+      "name": "auth001_development_authentication.py",
+      "sha256": "f83168ffba1babab74429265e838a69e1ccb47c980bea6ed9d6ff7a0ea3cb47d"
+    },
+    {
+      "name": "dept001_creation_grants_archival.py",
+      "sha256": "98903ea76251807e4ee3f2339b240cf596d307d4c25710a674430b34ff9ed675"
+    },
+    {
+      "name": "f48bfc74f531_add_department_database_registry.py",
+      "sha256": "7718bfd19fb8afe3b8edf7b000ba3a7f6ea3e4b894f0242d73fb0e50328d11ea"
+    },
+    {
+      "name": "p001_provisioning_attempts.py",
+      "sha256": "6c6ddcfcdc45534b6167ce8ca6bc68f52a4a125d5ac8fadd08c872ab7b3150f2"
+    },
+    {
+      "name": "p002_verified_contract.py",
+      "sha256": "3d1347cb89db9ca6afb46d9ae8a1c1bc07d40907612813cf387002166d4a126c"
+    },
+    {
+      "name": "rbac001_role_policies.py",
+      "sha256": "a81b7ac965d8d017e6e07ebeb2d31ebd4d1f21420d7e76450bfec13ffd17dc6c"
+    },
+    {
+      "name": "usage001_credits_budget.py",
+      "sha256": "65b04f9e36bcc4c198e9e3a5f732dadd2729d673f6c81b0e9ab35ea4f73da405"
+    },
+    {
+      "name": "users001_user_administration.py",
+      "sha256": "d09ccc662066e899089f45afbff39a8adaf07af53f8d41edec71fc85df7b9b26"
+    }
+  ]
+}
