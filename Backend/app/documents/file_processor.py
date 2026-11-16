@@ -175,24 +175,43 @@ def _ocr_image(path_or_image, lang="ara+eng"):
 
 
 def _extract_pdf(path):
-    """PDF extraction with OCR fallback for scanned pages."""
+    """PDF extraction with OCR fallback for scanned pages AND mixed pages.
+
+    - Scanned page (no text): OCR the whole page.
+    - Mixed page (text + images): append OCR of page images with [OCR] tag.
+    - Text-only page: use text directly.
+    """
+    import io
+
     pages = []
     all_text = []
+
     with pymupdf.open(str(path)) as doc:
         for page_index, page in enumerate(doc):
-            text = page.get_text("text", sort=True)
-            if not text or not text.strip():
-                # OCR fallback for scanned PDF pages
+            page_num = page_index + 1
+            text = (page.get_text("text", sort=True) or "").strip()
+            images = page.get_images(full=True)
+
+            if not text or images:
+                # OCR: scanned page (no text) OR mixed (text + images)
                 try:
                     pix = page.get_pixmap(dpi=150)
                     img_bytes = pix.tobytes("png")
-                    ocr_text = _ocr_image(Image.open(__import__("io").BytesIO(img_bytes)))
+                    ocr_text = _ocr_image(Image.open(io.BytesIO(img_bytes)))
                     if ocr_text:
-                        text = ocr_text
+                        if text:
+                            # Mixed: keep original text + append OCR (tagged)
+                            text = f"{text}\n[OCR]:\n{ocr_text}"
+                        else:
+                            # Scanned: OCR only
+                            text = ocr_text
                 except Exception as e:
-                    logger.warning("OCR failed for PDF page %d: %s", page_index + 1, e)
-            if text and text.strip():
-                pages.append({"page_number": page_index + 1, "text": text})
+                    logger.warning(
+                        "OCR failed for PDF page %d: %s", page_num, e
+                    )
+
+            if text:
+                pages.append({"page_number": page_num, "text": text})
                 all_text.append(text)
 
     return {
