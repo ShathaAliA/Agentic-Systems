@@ -1,7 +1,7 @@
-# C06 — Conversation / Result Store: approved baseline and Gate 2 proposal
+# C06 — Conversation / Result Store: approved baseline and Gate 3 progress
 
-**Status:** Gate 1 verified; Gate 2 approved and implemented locally for isolated
-synthetic verification only. No real document delivery or Gate 3 implementation.
+**Status:** Gates 1/2 verified; Gate 3 approved and implemented locally for
+isolated verification. No real document delivery, provider or Gate 4 integration.
 D01/D02/D03 were already approved by the user on 2026-11-15.
 **Branch:** `feature/core-backend`.
 **Precondition:** C05 Core-side verification closed; see
@@ -222,8 +222,10 @@ interface adapter and additive store-only migrations in a new test
 database; keep existing U1 and historical migration files untouched.
 
 **Gate 3 — conversation metadata:** reference the single result
-authority; add idempotent turns and owner-scoped paginated reads
-without raw history by default.
+authority; add idempotent immutable question turns and owner-scoped paginated
+reads. User-approved Gate 3 exposes four create/read routes, with no message
+submission/edit/delete or Admin cross-user bypass. Real source verification is
+still required before content delivery; absent/revoked content is masked.
 
 **Gate 4 — integration and security:** joint source/audience
 authorization adapter, provider receipt tests, row isolation,
@@ -298,7 +300,9 @@ production setup, automatic reconciliation, legacy conversion and Legal activati
 **Gate 2 exit:** isolated schema, immutability, privilege and failure tests pass;
 no real integration claim. Then propose Gate 3 and joint source/authority work.
 
-**Current C06 state:** Gate 2 PostgreSQL adapter and separate migrations are
-implemented for isolated synthetic testing. No application route is wired to it,
-and conversation APIs/real document integration have not started. See
-[Gate 2 verification and security limits](c06-gate2-verification.md).
+**Current C06 state:** Gate 3 owner-only routes are registered with an explicitly
+injected store factory (default unavailable). Independent c06_0002 adds immutable
+conversation/turn references and internal completed-U1 linking. No actual
+document/RAG/source adapter or public question submission is connected. See
+[Gate 3 contract/verification](c06-gate3-verification.md) and retain
+[Gate 2 security limits](c06-gate2-verification.md).

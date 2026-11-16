@@ -13,6 +13,7 @@ login role. Only the separate provisioning worker creates databases/roles.
 - [Core C03: isolated test runners and verification](Backend/docs/test-isolation-c03.md)
 - [Core C04: external U1 results and central migration contract](Backend/docs/external-results-c04.md)
 - [C06 Gate 2: isolated PostgreSQL result adapter](Backend/docs/c06-gate2-verification.md)
+- [C06 Gate 3: owner conversations and immutable history](Backend/docs/c06-gate3-verification.md)
 - [Subtask 2.2: department creation grants and archival](Backend/docs/departments.md)
 - [Subtask 2.3: central users, memberships and approved roles](Backend/docs/users.md)
 - [Independent task U1: question credits, usage and company budget](Backend/docs/usage.md)

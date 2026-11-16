@@ -1,7 +1,7 @@
 # C06 implementation log — Gate 1 (2026-11-15)
 
-**Status:** Gate 1 verified by hosted CI. Gate 2 explicitly approved and now
-implemented locally as an isolated PostgreSQL adapter; no public delivery or Gate 3.
+**Status:** Gates 1/2 verified; Gate 3 explicitly approved and implemented locally
+as owner-only conversations/history. No question dispatch or real source integration.
 **Baseline:** C05 closed at `4cba7564` with 376 selected unit tests and
 64 isolated PostgreSQL tests passing; C06 design recorded at `ad6bc41`.
 
@@ -112,3 +112,39 @@ compromised application credential; checksum is not a privileged-tamper signatur
 Legal's live state was not queried/changed and must remain failed. HR/Finance,
 documents-ai and the original development Central database were untouched.
 No push, merge or Gate 3 work. Prepare local reviewable commits only.
+
+## Gate 3 — local completion (2026-11-16)
+
+Approved owner-only conversation metadata and immutable completed-question turns.
+Added independent c06_0002; historical c06_0001/Central/tenant revisions unchanged.
+Four authenticated routes bring the explicit Core inventory to 48 operations.
+No public message submission/edit/delete, Admin cross-user bypass or automatic
+provider/question execution is registered. Store factory is explicit and defaults
+to unavailable. Text delivery requires current owner/scope/U1/source validation;
+revoked/unavailable content is masked without changing stored history.
+
+| Actual local check | Final result |
+|---|---|
+| Full sanitized Core unit runner | 409 passed, zero failures/errors/skips |
+| New native PostgreSQL Gate 3 group | 13 passed, zero failures/errors/skips |
+| Gate 2 PostgreSQL regression after additive migration | 16 passed, zero failures/errors/skips |
+| Upgrade c06_0001 with a synthetic prior result, then head twice | Prior row unchanged; c06_0002 installed |
+| Owner/Admin isolation, concurrent links/sequences, pagination, link rollback, uncertainty and history masking | Passed in the new group |
+
+One repeated run exposed concurrent use of the single-connection in-memory
+SQLite Central stub. The test now clones only synthetic fixture data to a
+throwaway SQLite file with separate connections. The final PostgreSQL run passed
+including three repeated rounds of concurrent linking; no production permission
+check was weakened. This was a fixture correction, not a bypass of inactive users.
+
+New clusters were backed up before migrations/grants, stopped and retained.
+The final Gate 3 recovery directory is ignored private state at
+`.local/native-auth-tests/d304a9c903ab4d54981a4aab5ac02854/`; the Gate 2 regression
+used another new cluster. Never commit/share their generated credentials/dumps.
+No existing HR, Finance, Legal, Central database or container was accessed.
+Legal's live status was not queried/changed; failed remains the requirement.
+
+See [Gate 3 contract, commands and limits](c06-gate3-verification.md). No Docker,
+hosted CI, real source adapter, RAG/LLM, full restore or encryption deployment is
+claimed in this batch. Gate 4, public question intake and audited global Admin
+history access remain future work. No push/merge; reviewable local commits only.
