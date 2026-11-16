@@ -35,7 +35,7 @@ Details and verification: [response security](response-security-c02.md).
 
 ## Explicit operation inventory
 
-`tests/core_access_contract.py` contains the same 44 method/path cases with valid
+`tests/core_access_contract.py` contains the same 48 method/path cases with valid
 request templates. The inventory gate inspects effective runtime routes, including
 routes hidden from OpenAPI, rejects unclassified or duplicate operations, and
 requires the validated-authentication dependency on every protected operation.
@@ -47,6 +47,10 @@ Tests do not add a runtime universal authorization bypass or trust a role header
 | GET | `/health` | public |
 | POST | `/auth/dev/login` | login |
 | POST | `/auth/dev/token` | login |
+| POST | `/api/conversations` | self |
+| GET | `/api/conversations` | self |
+| GET | `/api/conversations/{conversation_id}` | self |
+| GET | `/api/conversations/{conversation_id}/messages` | self |
 | GET | `/health/db` | core_admin |
 | GET | `/auth/me` | self |
 | POST | `/auth/logout` | self |
@@ -92,6 +96,14 @@ The existing `/docs`, `/docs/oauth2-redirect`, `/redoc` and `/openapi.json` are
 explicit public development tooling exceptions, checked separately by the gate.
 They expose API schemas, not database credentials or application records.
 Production documentation exposure policy is a separate deployment decision.
+
+Conversation operations are owner-only, including for global Admin. Another
+owner's resource/cursor returns the same 404 as an absent resource. No message
+submission/edit/delete or global conversation-reading bypass is registered.
+The store is injected explicitly and unconfigured storage fails closed with 503.
+Message bodies require current scope, completed U1 identity and source checks;
+unavailable/revoked content is represented by a placeholder, not exposed.
+See [Gate 3 contract and verification](c06-gate3-verification.md).
 
 ## Scope and lifecycle rules
 

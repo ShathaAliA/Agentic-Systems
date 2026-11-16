@@ -14,18 +14,21 @@ from app.users.routes import administrator
 from app.usage.routes import router as usage_router
 from app.role_policies.routes import router as role_policies_router
 from app.response_security import ResponseSecurityMiddleware
+from app.conversation_store.routes import router as conversations_router
 
 
-def create_app(*, central_engine=None, auth_settings=None):
+def create_app(*, central_engine=None, auth_settings=None, conversation_store_factory=None):
     app = FastAPI(title="AI Platform API", description="Backend API for the AI Platform", version="0.1.0")
     # Explicit engine injection is for tests; runtime obtains the guarded engine.
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
+    app.state.conversation_store_factory = conversation_store_factory
     app.include_router(auth_router)
     app.include_router(departments_router)
     app.include_router(users_router)
     app.include_router(usage_router)
     app.include_router(role_policies_router)
+    app.include_router(conversations_router)
 
     app.add_middleware(ResponseSecurityMiddleware)
 

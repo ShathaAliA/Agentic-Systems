@@ -15,6 +15,10 @@ OPERATIONS = [
     Operation("GET", "/health", "public"),
     Operation("POST", "/auth/dev/login", "login", {"email": "unknown@example.invalid", "password": "synthetic-invalid"}),
     Operation("POST", "/auth/dev/token", "login"),
+    Operation("POST", "/api/conversations", "self", {}),
+    Operation("GET", "/api/conversations", "self"),
+    Operation("GET", "/api/conversations/{conversation_id}", "self"),
+    Operation("GET", "/api/conversations/{conversation_id}/messages", "self"),
     Operation("GET", "/health/db", "core_admin"),
     Operation("GET", "/auth/me", "self"),
     Operation("POST", "/auth/logout", "self"),
@@ -63,7 +67,7 @@ ADMIN = [op for op in OPERATIONS if op.policy in {"core_admin", "department_admi
 
 def path_for(op):
     return op.path.format(user_id="outsider", department_id="finance", grant_id="missing",
-                          role_id="employee-user", assignment_id="missing")
+                          role_id="employee-user", assignment_id="missing", conversation_id="11111111-1111-4111-8111-111111111111")
 
 
 def request(client, op, headers):
