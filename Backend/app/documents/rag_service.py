@@ -115,8 +115,11 @@ def process_and_store_chunks(
     db.flush()  # ⚠️ flush only — no commit
 
 
-def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit: int = 3):
+def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit: int = 3, *, user_department_ids=(), user_role_ids=()):
     """Retrieve chunks from CURRENT approved version only."""
+    if not user_department_ids:
+        return []
+    from app.documents.audience_service import audience_predicate
     model = get_embedding_model()
     query_vector = model.encode(query).tolist()
 
@@ -125,6 +128,7 @@ def retrieve_relevant_chunks(db: Session, query: str, department_id: str, limit:
     ).where(
         Document.department_id == department_id,
         Document.status == "approved",
+        audience_predicate(user_department_ids, user_role_ids),
         DocumentChunk.version_number == Document.version,
     ).order_by(
         DocumentChunk.embedding.cosine_distance(query_vector)

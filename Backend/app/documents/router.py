@@ -8,11 +8,15 @@ import hashlib
 import logging
 from pydantic import ValidationError
 from fastapi import Request
-from sqlalchemy import select
-from app.usage.question_adapter import QuestionCommand, execute_question
+from sqlalchemy import select, text
+from app.usage.question_adapter import QuestionCommand
 from app.usage.processor import ConfirmedTechnicalFailure
 from app.usage.service import UsageError
-from app.documents import result_store, provider_accounting
+from app.documents import provider_accounting
+from app.documents.commands import Publish, Revision, VersionCommand, Question, Metadata, AudienceChange
+from app.usage.external_results import PreparedQuestionResult, execute_with_result_store
+from app.conversation_store.postgres import PostgresResultStore
+from app.conversation_store.schema import Answer
 
 from app.auth.dependencies import get_central_session as get_central_db
 from app.documents.models import (
@@ -21,6 +25,7 @@ from app.documents.models import (
     DocumentVersion,
     DocumentRevisionLog,
     DocumentChunk,
+    DocumentAudience,
 )
 from app.documents.audience_service import (
     get_user_context,
@@ -103,7 +108,7 @@ async def upload_document(
     try:
         result = process_file(temp_path)
     except Exception as e:
-        logger.exception("Upload Error while processing file %s: %s", temp_path, e)
+        logger.error("Document operation failed")
         if os.path.exists(temp_path):
             os.remove(temp_path)
         raise HTTPException(
@@ -115,7 +120,7 @@ async def upload_document(
         if os.path.exists(temp_path):
             os.remove(temp_path)
         reason = result.get("reason", "unknown")
-        logger.warning("File rejected: %s (file=%s)", reason, file.filename)
+        logger.warning("Document file rejected")
         safe_message = REJECTION_MESSAGES.get(
             reason, "الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف."
         )
@@ -190,7 +195,7 @@ async def upload_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Upload DB error: %s", e)
+        logger.error("Document operation failed")
         # ⚠️ cleanup: احذف الملف النهائي إذا فشل DB commit
         if os.path.exists(file_path):
             try:
@@ -206,6 +211,7 @@ async def upload_document(
 @router.post("/{document_id}/approve")
 async def approve_document(
     document_id: int,
+    body: Publish,
     department_id: str,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
@@ -219,12 +225,34 @@ async def approve_document(
             department_id=department_id,
             permission_code="documents:update",
         ) as db:
+            # Serialize publication within this tenant before taking document
+            # locks, including two different pending versions of the same name.
+            if db.get_bind().dialect.name == "postgresql":
+                db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope,0))"),
+                    {"scope": "document-publication:" + department_id})
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
+
+            if doc.version != body.expected_version or doc.status != "pending_review":
+                raise HTTPException(409, "document_version_conflict")
+            # Names/roles are validated against Central; null is an explicit ALL.
+            from app.models import Department, Role
+            for audience in body.audiences:
+                if ((audience.department_id is not None and central_db.get(Department, audience.department_id) is None)
+                        or (audience.role_id is not None and central_db.get(Role, audience.role_id) is None)):
+                    raise HTTPException(422, "unknown_document_audience")
+            version = db.query(DocumentVersion).filter_by(
+                document_id=doc.id, version_number=doc.version).one_or_none()
+            if version is None:
+                raise HTTPException(409, "document_version_missing")
+            db.query(DocumentAudience).filter_by(document_id=doc.id).delete()
+            for dept, role in {(a.department_id, a.role_id) for a in body.audiences}:
+                db.add(DocumentAudience(document_id=doc.id, department_id=dept,
+                    role_id=role, created_by=current_user.id))
 
             # ✅ NEW: archive previous approved docs with same filename (RAG stays on old until now)
             previous = db.query(Document).filter(
@@ -268,7 +296,7 @@ async def approve_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Approve error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -278,7 +306,7 @@ async def approve_document(
 @router.post("/{document_id}/revise")
 async def revise_document(
     document_id: int,
-    new_text: str,
+    body: Revision,
     department_id: str,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
@@ -295,10 +323,13 @@ async def revise_document(
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            if doc.version != body.expected_version:
+                raise HTTPException(409, "document_version_conflict")
+            new_text = body.text
             old_version = doc.version
             new_version_number = old_version + 1
 
@@ -347,7 +378,7 @@ async def revise_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Revise error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -357,16 +388,27 @@ async def revise_document(
 @router.post("/ask")
 def ask_question(
     request: Request,
-    query: str,
-    department_id: str,
-    request_key: str,
+    body: Question,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
+    department_id, query = body.department_id, body.question
+    if not has_permission(central_db, current_user.id, "documents:read", department_id):
+        raise HTTPException(403, "Permission denied")
+    # Gate 4 must inject trusted conversation ownership/scope validation plus a
+    # restricted Core store. No environment fallback and no tenant dual-write.
+    factory = request.app.state.document_result_store_factory
+    if factory is None:
+        raise HTTPException(503, "document_result_integration_unavailable")
     try:
+        store = factory(current_user.id, body.conversation_id, department_id)
+        if (not isinstance(store, PostgresResultStore) or store.user_id != current_user.id
+                or store.authorize is None):
+            raise UsageError(503, "document_result_integration_unavailable")
         settings = provider_accounting.Settings.from_environment()
-        command = QuestionCommand(request_key=request_key, question=query,
-            department_ids=(department_id,), context_revision=settings.context_revision)
+        command = QuestionCommand(request_key=body.request_key, question=query,
+            department_ids=(department_id,),
+            context_revision=body.conversation_id)
         central_engine = request.app.state.central_engine or central_db.get_bind()
 
         def context_for_user():
@@ -376,56 +418,54 @@ def ask_question(
         def process(ctx):
             departments, roles = context_for_user()
             with _open_department_session(current_user.id, department_id, "documents:read") as db:
-                chunks = rag_service.retrieve_relevant_chunks(db, query, department_id)
+                chunks = rag_service.retrieve_relevant_chunks(db, query, department_id,
+                    user_department_ids=departments, user_role_ids=roles)
                 allowed = [c for c in chunks if type(c.get("document_id")) is int
                     and user_can_access_document(db, c["document_id"], departments, roles)]
-                payload = {"status": "no_answer", "query": query,
-                    "answer": "لم يتم العثور على معلومات مسموح لك بالوصول إليها.", "sources": []}
-                if allowed:
-                    context = "\n\n".join(c["content"] for c in allowed)
+                from app.documents.source_authorization import source_for_chunk
+                sources = [source_for_chunk(db, department_id, c) for c in allowed]
+                payload = dict(question_request_id=ctx.request_id,
+                    conversation_id=body.conversation_id, status="no_answer",
+                    answer="لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
+                    answer_kind="system_notice", llm_called=False, sources=[],
+                    unanswered_departments=[], handoff_available=True)
+                if sources:
+                    context = "\n\n".join(c["quote"] for c in sources)
                     if len(provider_accounting.prompt_for(query, context).encode("utf-8")) + 512 > settings.input_limit:
                         raise ConfirmedTechnicalFailure()
                     def call(attempt_id):
                         answer, receipt = provider_accounting.generate(settings, query, context, attempt_id)
-                        payload.update(status="answered", answer=answer, sources=[{
-                            "document_id": c["document_id"], "document": c["document_name"],
-                            "chunk_id": c["chunk_id"], "version_number": c["version_number"],
-                            "location": c.get("page_number")} for c in allowed])
+                        payload.update(status="answered", answer=answer, answer_kind="generated",
+                            llm_called=True, sources=sources)
                         return receipt
                     ctx.perform("generation", "openai", settings.model, settings.envelope, call)
-                result_store.save(db, current_user.id, ctx.request_id, payload)
-                db.commit()
-                return payload["status"]
-
-        def load(user_id, identity):
-            departments, roles = context_for_user()
-            with _open_department_session(user_id, department_id, "documents:read") as db:
-                return result_store.load(db, user_id, identity, department_id, departments, roles)
+                validated = Answer.model_validate(payload).model_dump(mode="json")
+                # save_once commits only to the independent Core result DB.
+                return PreparedQuestionResult(payload["status"], validated)
 
         def authorize_content(user_id, cmd):
-            if (user_id != current_user.id or cmd.department_ids != (department_id,)
-                    or cmd.context_revision != settings.context_revision):
+            if user_id != current_user.id or cmd.department_ids != (department_id,):
                 return False
             with Session(central_engine) as session:
                 return has_permission(session, user_id, "documents:read", department_id)
 
-        result = execute_question(central_engine, authenticated_user_id=current_user.id,
+        result = execute_with_result_store(central_engine, authenticated_user_id=current_user.id,
             command=command, estimated_micro_usd=settings.envelope,
-            authorize_content=authorize_content,
-            process=process, load_response=load)
+            authorize_content=authorize_content, process=process, store=store)
         if result.response is not None:
-            return {**result.response, "request_key": request_key, "replayed": result.receipt.replayed}
+            return result.response
         if result.receipt.state == "refunded":
-            raise HTTPException(503, "تعذر إكمال الطلب. تم إرجاع الرصيد.")
-        raise HTTPException(409, "الطلب قيد المعالجة أو يحتاج التحقق؛ لم يُعَد تنفيذه.")
+            raise HTTPException(503, "question_technical_failure_refunded")
+        raise HTTPException(409, "question_processing_or_uncertain")
     except UsageError as error:
         raise HTTPException(error.status, error.code) from None
     except HTTPException:
         raise
     except ValidationError:
-        raise HTTPException(422, "Invalid question data") from None
+        raise HTTPException(422, "invalid_question_or_answer") from None
     except Exception:
-        raise HTTPException(503, "Question service unavailable") from None
+        logger.error("Question operation failed")
+        raise HTTPException(503, "question_service_unavailable") from None
 
 
 # ------------------------------------------------------------------
@@ -469,7 +509,7 @@ async def list_documents(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("List error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -507,36 +547,39 @@ async def download_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Download error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
 # ------------------------------------------------------------------
 # Delete → archive
 # ------------------------------------------------------------------
-@router.delete("/{document_id}")
+@router.post("/{document_id}/archive")
 async def delete_document(
     document_id: int,
+    body: VersionCommand,
     department_id: str,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not has_permission(central_db, current_user.id, "documents:delete", department_id):
+    if not has_permission(central_db, current_user.id, "documents:archive", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     try:
         with _open_department_session(
             user_id=current_user.id,
             department_id=department_id,
-            permission_code="documents:delete",
+            permission_code="documents:archive",
         ) as db:
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            if doc.version != body.expected_version:
+                raise HTTPException(409, "document_version_conflict")
             doc.status = "archived"
             version = db.query(DocumentVersion).filter(
                 DocumentVersion.document_id == doc.id,
@@ -556,13 +599,29 @@ async def delete_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Delete error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
 # ------------------------------------------------------------------
 # B2: Get metadata
 # ------------------------------------------------------------------
+@router.get("/{document_id}/review")
+async def review_document(
+    document_id: int, department_id: str,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "documents:update", department_id):
+        raise HTTPException(403, "Permission denied")
+    with _open_department_session(current_user.id, department_id, "documents:update") as db:
+        doc = db.query(Document).filter_by(id=document_id, department_id=department_id).first()
+        if doc is None:
+            raise HTTPException(404, "document_not_found")
+        return dict(document_id=doc.id, version=doc.version, status=doc.status,
+                    extracted_text=doc.extracted_text or "")
+
+
 @router.get("/{document_id}")
 async def get_document(
     document_id: int,
@@ -600,7 +659,7 @@ async def get_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Get document error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -611,7 +670,7 @@ async def get_document(
 async def update_document_metadata(
     document_id: int,
     department_id: str,
-    filename: str | None = None,
+    body: Metadata,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -627,10 +686,13 @@ async def update_document_metadata(
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            if doc.version != body.expected_version:
+                raise HTTPException(409, "document_version_conflict")
+            filename = body.filename
             if filename is not None:
                 if not filename.strip():
                     raise HTTPException(status_code=400, detail="اسم الملف لا يمكن أن يكون فارغاً")
@@ -652,7 +714,7 @@ async def update_document_metadata(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Update metadata error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -664,6 +726,7 @@ async def replace_document_version(
     document_id: int,
     file: UploadFile = File(...),
     department_id: str = Form(...),
+    expected_version: int = Form(..., ge=1),
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -681,13 +744,14 @@ async def replace_document_version(
     temp_filename = f"temp_{uuid.uuid4()}{file_ext}"
     temp_path = os.path.join(UPLOAD_DIR, temp_filename)
 
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
         result = process_file(temp_path)
     except Exception as e:
-        logger.exception("Replace error processing file %s: %s", temp_path, e)
+        logger.error("Document operation failed")
         if os.path.exists(temp_path):
             os.remove(temp_path)
         raise HTTPException(status_code=400, detail="فشل معالجة الملف. تأكد من أن الملف سليم وغير تالف.")
@@ -696,7 +760,7 @@ async def replace_document_version(
         if os.path.exists(temp_path):
             os.remove(temp_path)
         reason = result.get("reason", "unknown")
-        logger.warning("Replace rejected: %s (file=%s)", reason, file.filename)
+        logger.warning("Document file rejected")
         safe_message = REJECTION_MESSAGES.get(
             reason, "الملف غير مدعوم أو تالف. يرجى التأكد من نوع الملف."
         )
@@ -715,12 +779,14 @@ async def replace_document_version(
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 if os.path.exists(file_path):
                     os.remove(file_path)
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            if doc.version != expected_version:
+                raise HTTPException(409, "document_version_conflict")
             old_version = doc.version
             new_version_number = old_version + 1
             extracted_text = result["extraction"].get("original_text", "") or ""
@@ -770,7 +836,7 @@ async def replace_document_version(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Replace DB error: %s", e)
+        logger.error("Document operation failed")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -786,19 +852,18 @@ async def replace_document_version(
 async def add_document_audience(
     document_id: int,
     department_id: str,
-    audience_department_id: str | None = None,
-    audience_role_id: str | None = None,
+    body: AudienceChange,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
     if not has_permission(central_db, current_user.id, "documents:manage_permissions", department_id):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    if audience_department_id is None and audience_role_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="حدد قسماً أو دوراً (أو كلاهما).",
-        )
+    audience_department_id, audience_role_id = body.department_id, body.role_id
+    from app.models import Department, Role
+    if ((audience_department_id is not None and central_db.get(Department, audience_department_id) is None)
+            or (audience_role_id is not None and central_db.get(Role, audience_role_id) is None)):
+        raise HTTPException(422, "unknown_document_audience")
 
     try:
         from app.documents.models import DocumentAudience
@@ -810,15 +875,17 @@ async def add_document_audience(
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
+            if doc.version != body.expected_version:
+                raise HTTPException(409, "document_version_conflict")
             existing = db.query(DocumentAudience).filter(
                 DocumentAudience.document_id == document_id,
                 DocumentAudience.department_id == audience_department_id,
                 DocumentAudience.role_id == audience_role_id,
-            ).first()
+            ).with_for_update().first()
             if existing:
                 return {"status": "exists", "audience_id": existing.id}
 
@@ -841,7 +908,7 @@ async def add_document_audience(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Add audience error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -865,7 +932,7 @@ async def list_document_audiences(
             doc = db.query(Document).filter(
                 Document.id == document_id,
                 Document.department_id == department_id,
-            ).first()
+            ).with_for_update().first()
             if not doc:
                 raise HTTPException(status_code=404, detail="المستند غير موجود")
 
@@ -888,7 +955,7 @@ async def list_document_audiences(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("List audiences error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
@@ -897,6 +964,7 @@ async def delete_document_audience(
     document_id: int,
     audience_id: int,
     department_id: str,
+    body: VersionCommand,
     central_db: Session = Depends(get_central_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -910,10 +978,16 @@ async def delete_document_audience(
             department_id=department_id,
             permission_code="documents:manage_permissions",
         ) as db:
+            doc = db.query(Document).filter_by(id=document_id,
+                department_id=department_id).with_for_update().first()
+            if doc is None:
+                raise HTTPException(404, "document_not_found")
+            if doc.version != body.expected_version:
+                raise HTTPException(409, "document_version_conflict")
             audience = db.query(DocumentAudience).filter(
                 DocumentAudience.id == audience_id,
                 DocumentAudience.document_id == document_id,
-            ).first()
+            ).with_for_update().first()
             if not audience:
                 raise HTTPException(status_code=404, detail="الجمهور غير موجود")
 
@@ -929,5 +1003,5 @@ async def delete_document_audience(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Delete audience error: %s", e)
+        logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")

@@ -1,6 +1,6 @@
 """Document audience filtering — applied BEFORE retrieval, re-checked AFTER."""
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.documents.models import Document, DocumentAudience
 
@@ -13,7 +13,7 @@ def user_can_access_document(
 ) -> bool:
     """
     Audience rules (department AND role):
-      - No rows → visible within caller's authorized department scope.
+      - No rows → denied; publication must select an explicit audience.
       - (dept_id, role_id): both must match.
       - (dept_id, NULL): user in dept, any role.
       - (NULL, role_id): any dept, user has role.
@@ -27,7 +27,7 @@ def user_can_access_document(
     ).scalars().all()
 
     if not audiences:
-        return True  # legacy: no audiences configured
+        return False  # Missing publication policy never grants access.
 
     for a in audiences:
         if a.department_id is None and a.role_id is None:
@@ -84,3 +84,18 @@ def get_user_context(db_central, user_id: str, department_id: str | None = None)
     ).scalars().all()
 
     return list(depts), list(roles)
+
+
+def audience_predicate(department_ids, role_ids):
+    """Correlated EXISTS applied in SQL before vector ordering/LIMIT.
+
+    Inputs must come from fresh Central authorization, never request role headers.
+    The owning tenant gate remains mandatory; this is not cross-tenant routing.
+    """
+    return select(DocumentAudience.id).where(
+        DocumentAudience.document_id == Document.id,
+        or_(DocumentAudience.department_id.is_(None),
+            DocumentAudience.department_id.in_(department_ids)),
+        or_(DocumentAudience.role_id.is_(None),
+            DocumentAudience.role_id.in_(role_ids)),
+    ).exists() if department_ids else False

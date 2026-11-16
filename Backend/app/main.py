@@ -4,44 +4,38 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-import traceback
 
+from app.response_security import ResponseSecurityMiddleware
 from app.auth.config import AuthSettings
 from app.auth.dependencies import get_central_session
 from app.auth.routes import router as auth_router
 from app.departments.routes import router as departments_router
 from app.documents.router import router as documents_router
-from app.database import check_database_connection
 from app.users.routes import router as users_router
 from app.users.routes import administrator
 from app.usage.routes import router as usage_router
 from app.role_policies.routes import router as role_policies_router
 
 
-def create_app(*, central_engine=None, auth_settings=None):
+def create_app(*, central_engine=None, auth_settings=None, document_result_store_factory=None):
     app = FastAPI(
         title="AI Platform API",
         description="Backend API for the AI Platform",
         version="0.1.0",
     )
+    app.state.document_result_store_factory = document_result_store_factory
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
 
     # --- Routers ---
     app.include_router(auth_router)
     app.include_router(departments_router)
-    app.include_router(documents_router)   # ← documents (لدينا)
+    app.include_router(documents_router)
     app.include_router(users_router)
     app.include_router(usage_router)
     app.include_router(role_policies_router)
 
-    @app.middleware("http")
-    async def prevent_auth_caching(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path == "/health/db" or request.url.path.startswith(("/auth/", "/admin/", "/me/", "/departments/", "/documents/")):
-            response.headers["Cache-Control"] = "no-store"
-            response.headers["Pragma"] = "no-cache"
-        return response
+    app.add_middleware(ResponseSecurityMiddleware)
 
     @app.exception_handler(RequestValidationError)
     async def safe_validation_error(request, exc):
@@ -49,8 +43,6 @@ def create_app(*, central_engine=None, auth_settings=None):
 
     @app.exception_handler(SQLAlchemyError)
     async def database_error(request, exc):
-        print(f"\n DATABASE ERROR: {exc} \n")
-        traceback.print_exc()
         return JSONResponse(status_code=503, content={"detail": "Database is unavailable"})
 
     @app.get("/")
