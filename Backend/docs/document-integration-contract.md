@@ -1,3 +1,8 @@
+> Historical proposal below. For the current documents-ai repair contract,
+> migration heads, default-disabled question integration and verification limits,
+> see [documents-blocker-repairs.md](documents-blocker-repairs.md). The old P0
+> findings and route examples below are historical, not the current branch state.
+
 # Core / documents integration contract — proposal V1
 
 Status: **Core proposal, not jointly approved**. Reviewed documents-ai snapshot:
