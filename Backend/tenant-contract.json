@@ -1,7 +1,7 @@
 {
   "contract_version": 1,
   "ready": false,
-  "required_revision": "tenant_0007",
+  "required_revision": "tenant_0008",
   "required_tables": [
     "documents",
     "document_versions",
@@ -9,8 +9,7 @@
     "document_audit_logs",
     "document_chunks",
     "document_audiences",
-    "_provisioning_identity",
-    "question_results"
+    "_provisioning_identity"
   ],
   "table_privileges": {
     "documents": [
@@ -42,10 +41,6 @@
       "INSERT",
       "UPDATE",
       "DELETE"
-    ],
-    "question_results": [
-      "SELECT",
-      "INSERT"
     ]
   },
   "sequence_privileges": {

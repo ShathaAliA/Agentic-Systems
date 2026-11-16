@@ -6,7 +6,7 @@ from app.users.service import approved_role, writer_lock
 from app.role_policies.models import RolePolicy, RolePolicyAudit
 
 READ = frozenset({"documents:read"})
-DEPARTMENT = READ | {"documents:upload", "documents:update", "documents:manage_permissions", "audit:read"}
+DEPARTMENT = READ | {"documents:upload", "documents:update", "documents:archive", "documents:manage_permissions", "audit:read"}
 ALLOWED = {"Employee": READ, "Department Manager": DEPARTMENT, "Deputy Department Manager": DEPARTMENT}
 
 
