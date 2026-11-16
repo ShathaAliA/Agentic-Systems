@@ -2,7 +2,9 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-core:test",
-    [ValidateSet("tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
+    [ValidateSet("tests/test_document_pipeline_postgres.py", "tests/test_upload_retrieval_simple.py", "tests/test_upload_rollback.py", "postgres:17-alpine", "pgvector/pgvector:pg17")]
+    [string]$PostgresImage = "postgres:17-alpine",
+    [ValidateSet("tests/test_document_repairs_postgres.py", "tests/test_documents_postgres.py", "tests/test_document_provisioning_postgres.py", "tests/test_document_results_postgres.py", "tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
@@ -56,7 +58,7 @@ try {
         "--label", "ai-platform-test-run=$suffix",
         "--mount", "type=bind,source=$state,target=/run/auth-test,readonly",
         "-e", "POSTGRES_USER=auth_test_owner", "-e", "POSTGRES_DB=$testDatabase",
-        "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", "postgres:17-alpine")
+        "-e", "POSTGRES_PASSWORD_FILE=/run/auth-test/postgres-password", $PostgresImage)
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         # The image's temporary initialization server accepts Unix sockets before
