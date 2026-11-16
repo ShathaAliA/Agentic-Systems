@@ -1,3 +1,6 @@
+# ============================================================
+# Core (شذى) — Auth, RBAC, Usage, Departments
+# ============================================================
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -24,6 +27,9 @@ websockets==17.3
 alembic>=1.13,<2
 argon2-cffi==25.1.0
 
+# ============================================================
+# Documents & AI (Developer B)
+# ============================================================
 markitdown[all]
 pdfplumber
 pytesseract
@@ -32,14 +38,12 @@ google-genai
 pgvector
 python-multipart
 PyMuPDF
-
 openai
 arabic-reshaper
 python-bidi
-
 python-docx
 openpyxl
 python-pptx
 pillow
 pandas
-magika==1.0.3
+magika

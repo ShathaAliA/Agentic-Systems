@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -7,7 +7,11 @@ from app.auth.service import DevelopmentSessionValidator, unauthorized
 from app.models import Permission, Role, RoleAssignment, RolePermission, User
 from app.services.authorization import has_permission
 
-bearer = HTTPBearer(auto_error=False)
+bearer = OAuth2PasswordBearer(
+    tokenUrl="auth/dev/token", auto_error=False,
+    scheme_name="DevelopmentSession",
+    description="Development-only opaque, expiring and revocable session; not Microsoft Entra authentication.",
+)
 
 def require_development_auth(request: Request):
     settings = request.app.state.auth_settings
@@ -25,13 +29,13 @@ def get_central_session(request: Request):
 
 
 def get_auth_context(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    credentials: str | None = Depends(bearer),
     settings=Depends(require_development_auth),
     session: Session = Depends(get_central_session),
 ):
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    if not credentials:
         raise unauthorized()
-    return DevelopmentSessionValidator().validate(session, credentials.credentials)
+    return DevelopmentSessionValidator().validate(session, credentials)
 
 
 def get_current_user(context=Depends(get_auth_context)) -> User:

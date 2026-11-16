@@ -139,6 +139,15 @@ def test_migrations_and_authentication_with_least_privilege_runtime(isolated_pos
         assert client.get("/test/departments/legal", headers=administrator).status_code == 403
         assert client.post("/auth/logout", headers=employee).status_code == 204
         assert client.get("/auth/me", headers=employee).status_code == 401
+        form = client.post("/auth/dev/token", data={"username": "employee@example.invalid", "password": password})
+        assert form.status_code == 200
+        assert form.headers["cache-control"] == "no-store"
+        form_headers = {"Authorization": "Bearer " + form.json()["access_token"]}
+        assert client.get("/auth/me", headers=form_headers).json()["id"] == "employee"
+        assert client.get("/test/departments/finance", headers=form_headers).status_code == 403
+        assert client.get("/test/global", headers=form_headers).status_code == 403
+        assert client.post("/auth/logout", headers=form_headers).status_code == 204
+        assert client.get("/auth/me", headers=form_headers).status_code == 401
         headers = login_headers(client, password)
         with Session(admin) as s:
             s.get(DevelopmentCredential, "employee").version = secrets.token_hex(16)

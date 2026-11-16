@@ -14,6 +14,7 @@ OPERATIONS = [
     Operation("GET", "/", "public"),
     Operation("GET", "/health", "public"),
     Operation("POST", "/auth/dev/login", "login", {"email": "unknown@example.invalid", "password": "synthetic-invalid"}),
+    Operation("POST", "/auth/dev/token", "login"),
     Operation("GET", "/health/db", "core_admin"),
     Operation("GET", "/auth/me", "self"),
     Operation("POST", "/auth/logout", "self"),
@@ -73,4 +74,7 @@ def path_for(op):
 
 
 def request(client, op, headers):
+    if op.path == "/auth/dev/token":
+        return client.request(op.method, path_for(op), headers=headers,
+                              data={"username": "unknown@example.invalid", "password": "synthetic-invalid"})
     return client.request(op.method, path_for(op), headers=headers, json=op.body)
