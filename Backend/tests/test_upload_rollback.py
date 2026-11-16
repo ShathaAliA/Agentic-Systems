@@ -16,30 +16,8 @@ pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND / "tenant_alembic.ini"
-ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
-
-
-@pytest.fixture(scope="module")
-def fresh_db():
-    db_name = f"dept_{uuid.uuid4().hex}"
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-        c.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin.dispose()
-
-    url = f"postgresql+psycopg://postgres:postgres@127.0.0.1:5435/{db_name}"
-    yield {"db_name": db_name, "url": url}
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = :db AND pid <> pg_backend_pid()"
-        ), {"db": db_name})
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    admin.dispose()
+from document_test_infrastructure import fresh_db
+from test_authentication_postgres import isolated_postgres
 
 
 def test_chunks_failure_rolls_back_new_doc(fresh_db):

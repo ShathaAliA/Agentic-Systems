@@ -135,7 +135,7 @@ def test_contract_matches_schema(fresh_db):
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
 
     assert contract["contract_version"] == 1, "contract_version must be int 1"
-    assert contract["required_revision"] == "tenant_0007"
+    assert contract["required_revision"] == "tenant_0008"
     assert contract["ready"] is False
     assert "_provisioning_identity" in contract["required_tables"]
     assert set(contract["required_tables"]).issubset({

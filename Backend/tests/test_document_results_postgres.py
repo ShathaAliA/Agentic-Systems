@@ -45,21 +45,33 @@ def test_tenant_result_migration_immutable_grants_and_replay_access(fresh_db):
         pg.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(fresh_db["db_name"]), sql.Identifier(role)))
         pg.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(role)))
         pg.execute(sql.SQL("GRANT SELECT ON documents, document_audiences TO {}").format(sql.Identifier(role)))
-        pg.execute(sql.SQL("GRANT SELECT, INSERT ON question_results TO {}").format(sql.Identifier(role)))
     runtime = restrict_runtime_engine(create_engine(fresh_db["url"].set(username=role, password=password), hide_parameters=True))
     with Session(owner) as session, session.begin():
         session.add(Document(id=1, filename="synthetic", file_path="unused", department_id="synthetic", status="approved", version=1))
         session.add(DocumentAudience(document_id=1, department_id="synthetic", role_id="reader", created_by="owner"))
-    payload = {"status": "answered", "answer": "synthetic answer", "sources": [{"document_id": 1, "version_number": 1}]}
+    with owner.begin() as c:
+        c.execute(text("INSERT INTO question_results(request_id,user_id,payload) VALUES ('legacy','employee','{}')"))
+    freeze = migration.with_name("tenant_0008_freeze_legacy_results.py")
+    spec = importlib.util.spec_from_file_location("legacy_freeze", freeze)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with owner.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            module.upgrade()
+    # Even the owner cannot mutate historical results through ordinary DML.
+    for statement in ("UPDATE question_results SET user_id='changed'", "DELETE FROM question_results",
+                      "TRUNCATE question_results",
+                      "INSERT INTO question_results(request_id,user_id,payload) VALUES ('new','employee','{}')"):
+        with owner.begin() as connection, pytest.raises(DBAPIError) as error:
+            connection.execute(text(statement))
+        assert error.value.orig.sqlstate == "23514"
     try:
-        with Session(runtime) as session, session.begin():
-            result_store.save(session, "employee", "request", payload)
-        with Session(runtime) as session:
-            assert result_store.load(session, "employee", "request", "synthetic", ["synthetic"], ["reader"]) == payload
-            assert result_store.load(session, "other", "request", "synthetic", ["synthetic"], ["reader"]) is None
-            with pytest.raises(UsageError, match="revoked"):
-                result_store.load(session, "employee", "request", "synthetic", ["synthetic"], ["denied"])
-        for statement in ("UPDATE question_results SET user_id='other'", "DELETE FROM question_results",
+        for operation in (result_store.save, result_store.load):
+            with pytest.raises(UsageError, match="disabled"):
+                operation()
+        with owner.connect() as c:
+            assert c.scalar(text("SELECT count(*) FROM question_results")) == 1
+        for statement in ("SELECT * FROM question_results", "INSERT INTO question_results(request_id,user_id,payload) VALUES ('new','employee','{}')", "UPDATE question_results SET user_id='other'", "DELETE FROM question_results",
                           "CREATE TABLE forbidden(id int)"):
             with runtime.connect() as connection, pytest.raises(DBAPIError) as error:
                 connection.execute(text(statement))

@@ -61,8 +61,8 @@ def _make_doc(db, dept_id="hr"):
     return doc
 
 
-def test_no_audience_allows_dept_scope(fresh_db):
-    """A document with NO audience rows is visible within its department (legacy)."""
+def test_no_audience_denies_dept_scope(fresh_db):
+    """A document with no explicit audience is denied."""
     engine = create_engine(fresh_db["url"], hide_parameters=True)
     cfg = Config(str(CONFIG_PATH))
     with engine.begin() as conn:
@@ -71,7 +71,7 @@ def test_no_audience_allows_dept_scope(fresh_db):
 
     with Session(engine) as db:
         doc = _make_doc(db)
-        assert user_can_access_document(db, doc.id, ["hr"], ["employee"]) is True
+        assert user_can_access_document(db, doc.id, ["hr"], ["employee"]) is False
         assert user_can_access_document(db, doc.id, [], []) is False
     engine.dispose()
 

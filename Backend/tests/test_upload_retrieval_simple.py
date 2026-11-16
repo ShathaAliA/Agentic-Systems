@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from app.documents.models import Document, DocumentVersion
+from app.documents.models import Document, DocumentVersion, DocumentAudience
 from app.documents import rag_service
 
 
@@ -15,31 +15,8 @@ pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND / "tenant_alembic.ini"
-ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
-
-
-@pytest.fixture(scope="module")
-def fresh_db():
-    db_name = f"dept_{uuid.uuid4().hex}"
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-        c.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin.dispose()
-
-    url = f"postgresql+psycopg://postgres:postgres@127.0.0.1:5435/{db_name}"
-    yield {"db_name": db_name, "url": url}
-
-    # ⚠️ terminate any remaining connections before DROP
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = :db AND pid <> pg_backend_pid()"
-        ), {"db": db_name})
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    admin.dispose()
+from document_test_infrastructure import fresh_db
+from test_authentication_postgres import isolated_postgres
 
 
 def _migrate(url):
@@ -65,6 +42,7 @@ def test_upload_then_retrieve(fresh_db):
             db.commit()
             db.refresh(doc)
 
+            db.add(DocumentAudience(document_id=doc.id, department_id="hr", role_id="reader", created_by="owner"))
             db.add(DocumentVersion(document_id=doc.id, version_number=1, status="approved"))
             db.commit()
 
@@ -74,7 +52,7 @@ def test_upload_then_retrieve(fresh_db):
             )
             db.commit()
 
-            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=3)
+            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=3, user_department_ids=["hr"], user_role_ids=["reader"])
             assert len(results) >= 1, f"No chunks retrieved (results={results})"
             assert results[0]["document_id"] == doc.id
             assert results[0]["version_number"] == 1
@@ -94,6 +72,7 @@ def test_retrieval_excludes_non_approved(fresh_db):
                 department_id="hr", status="approved", version=1,
             )
             db.add(approved); db.commit(); db.refresh(approved)
+            db.add(DocumentAudience(document_id=approved.id, department_id="hr", role_id="reader", created_by="owner"))
             db.add(DocumentVersion(document_id=approved.id, version_number=1, status="approved"))
             db.commit()
             rag_service.process_and_store_chunks(
@@ -118,7 +97,7 @@ def test_retrieval_excludes_non_approved(fresh_db):
             db.commit()
 
             # Retrieve — approved must be found, pending excluded
-            results = rag_service.retrieve_relevant_chunks(db, "APPROVED_UNIQUE_CONTENT", "hr", limit=10)
+            results = rag_service.retrieve_relevant_chunks(db, "APPROVED_UNIQUE_CONTENT", "hr", limit=10, user_department_ids=["hr"], user_role_ids=["reader"])
             doc_ids = [r["document_id"] for r in results]
             assert approved.id in doc_ids, f"Approved missing: doc_ids={doc_ids}, approved.id={approved.id}"
             assert pending.id not in doc_ids, f"Pending leaked: doc_ids={doc_ids}, pending.id={pending.id}"

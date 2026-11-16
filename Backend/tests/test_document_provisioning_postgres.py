@@ -30,10 +30,10 @@ def test_real_document_contract_can_be_verified_without_runtime_admin(integratio
     extension_engine.dispose()
     assert worker.run(identity) == "active"
     row = registry_row(i, identity)
-    assert row.applied_revision == "tenant_0007" and row.verified_contract == worker.migrator.contract_id
+    assert row.applied_revision == "tenant_0008" and row.verified_contract == worker.migrator.contract_id
     with i["pg"].connect(database, credential) as connection:
         doc = connection.execute("INSERT INTO documents(filename,file_path,department_id) VALUES ('synthetic','unused',%s) RETURNING id", (identity,)).fetchone()[0]
         assert doc > 0  # documents_id_seq must be usable
-        connection.execute("INSERT INTO question_results(request_id,user_id,payload) VALUES ('synthetic','synthetic','{}')")
+        assert not connection.execute("SELECT has_table_privilege(current_user,'question_results','SELECT,INSERT,UPDATE,DELETE')").fetchone()[0]
         assert not connection.execute("SELECT has_table_privilege(current_user,'question_results','UPDATE,DELETE')").fetchone()[0]
         assert connection.execute("SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname=current_user").fetchone()[0] is False
