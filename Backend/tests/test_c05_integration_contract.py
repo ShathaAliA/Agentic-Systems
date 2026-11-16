@@ -44,17 +44,12 @@ def test_c05_core_does_not_expose_document_endpoints_or_central_document_tables(
         )
     )
 
-    # FIX: Some included routers do not expose a "path" attribute.
-    paths = {
-        route.path
-        for route in app.routes
-        if hasattr(route, "path")
-    }
-
-    assert not any(
-        path.startswith(("/api/documents", "/documents"))
-        for path in paths
-    )
+    from test_core_access import effective_routes, dependency_calls
+    from app.auth.dependencies import get_auth_context
+    routes = [r for r in effective_routes(app) if getattr(r, "path", "").startswith("/api/documents")]
+    assert routes  # partner branch mounts documents, unlike the Core-only branch
+    assert all(get_auth_context in set(dependency_calls(r.dependant)) for r in routes)
+    assert app.state.document_result_store_factory is None
 
     assert not any(
         name in Base.metadata.tables
@@ -141,16 +136,11 @@ def test_c05_core_migration_heads_are_not_partner_branch_heads():
     central = ScriptDirectory(str(BACKEND / "alembic"))
     tenant = ScriptDirectory(str(BACKEND / "tenant_alembic"))
 
-    assert central.get_heads() == ["rbac001"]
-    assert tenant.get_heads() == ["tenant_0001"]
+    assert central.get_heads() == ["rbac002_archive"]
+    assert tenant.get_heads() == ["tenant_0008"]
+    assert {"usage002_result_payload", "usage003_merge", "usage004_fence"} <= {
+        revision.revision for revision in central.walk_revisions()}
 
-    assert not {
-        "usage002_result_payload",
-        "usage003_merge",
-    } & {
-        revision.revision
-        for revision in central.walk_revisions()
-    }
 
 
 @pytest.mark.parametrize(

@@ -50,7 +50,7 @@ def test_sensitive_responses_override_cache_without_losing_security_headers(stat
 def test_core_missing_document_paths_and_method_errors_are_not_cached():
     app = create_app(auth_settings=AuthSettings(mode="disabled", app_env="test"))
     with TestClient(app) as client:
-        for path in ("/api/documents", "/api/documents/", "/api/documents/missing?query=synthetic", "/auth/missing"):
+        for path in ("/api/documents/missing/unknown?query=synthetic", "/auth/missing"):
             response = client.get(path)
             assert response.status_code == 404
             assert response.headers["cache-control"] == "no-store"

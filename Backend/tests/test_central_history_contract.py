@@ -22,7 +22,8 @@ def test_central_graph_is_connected_single_head_without_database_configuration()
     assert scripts.get_bases() == ["b8e1db57a78c"]
     assert history[0].revision == heads[0]
     assert {item.revision for item in history} >= {"usage001", "rbac001"}
-    assert not {"usage002_result_payload", "usage003_merge"} & {item.revision for item in history}
+    assert heads == ["rbac002_archive"]
+    assert {"usage002_result_payload", "usage003_merge", "usage004_fence"} <= {item.revision for item in history}
 
 
 def test_reviewed_historical_migration_files_are_not_rewritten():

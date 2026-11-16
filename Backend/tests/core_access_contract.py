@@ -58,9 +58,9 @@ OPERATIONS = [
 ]
 # Documents remain tenant-scoped; these entries also join the invalid-identity matrix.
 OPERATIONS += [Operation(method, "/api/documents" + path, "document") for method, path in [
-    ("POST", "/upload"), ("POST", "/{document_id}/approve"), ("POST", "/{document_id}/revise"),
+    ("GET", "/{document_id}/review"), ("POST", "/upload"), ("POST", "/{document_id}/approve"), ("POST", "/{document_id}/revise"),
     ("POST", "/ask"), ("GET", "/"), ("GET", "/download/{document_id}"),
-    ("DELETE", "/{document_id}"), ("GET", "/{document_id}"), ("PATCH", "/{document_id}"),
+    ("POST", "/{document_id}/archive"), ("GET", "/{document_id}"), ("PATCH", "/{document_id}"),
     ("POST", "/{document_id}/version"), ("POST", "/{document_id}/permissions"),
     ("GET", "/{document_id}/permissions"), ("DELETE", "/{document_id}/permissions/{audience_id}")]]
 TOOLING = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
