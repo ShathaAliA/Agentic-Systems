@@ -229,3 +229,16 @@ were both verified stopped. All generated disks/backups remain private and ignor
 No existing HR/Finance/Legal database was queried, migrated, stopped or deleted.
 No provider request, Gate 4 execution, branch merge or force push occurred.
 Exact-head hosted CI is checked only after the authorized documents-ai push.
+
+### Hosted CI executable-resolution repair
+
+First published reconciled head e7936d4: hosted 468 unit tests passed, all 83
+native PostgreSQL cases passed, runtime/test Docker builds and restricted runtime
+smoke passed. Run 44039527345 then failed before pgvector setup: PowerShell found
+both /usr/bin/docker and /bin/docker and coerced the two paths into one executable
+name. No pgvector assertion failed and no existing database was a target.
+
+Resolve-TestExecutable now selects the first resolved application explicitly.
+A synthetic PowerShell regression proves duplicate PATH aliases return one string.
+Local-socket validation, non-root client restrictions and ownership-checked cleanup
+remain unchanged. The follow-up commit requires its own exact-head hosted run.

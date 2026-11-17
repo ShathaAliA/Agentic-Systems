@@ -53,7 +53,13 @@ function Assert-TestState([string]$Repo, [string]$Area, [string]$State) {
 }
 
 function Resolve-TestExecutable([string]$Executable) {
-    try { return (Get-Command -Name $Executable -CommandType Application -ErrorAction Stop).Source }
+    try {
+        # Linux PATH may resolve both /usr/bin and its /bin symlink. Return one
+        # application path, never an array coerced into a space-separated name.
+        $application = Get-Command -Name $Executable -CommandType Application -ErrorAction Stop | Select-Object -First 1
+        if (-not $application.Source) { throw 'Missing executable source' }
+        return $application.Source
+    }
     catch { throw 'Required test executable is unavailable' }
 }
 

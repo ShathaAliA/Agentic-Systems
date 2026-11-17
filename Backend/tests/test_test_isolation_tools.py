@@ -187,3 +187,18 @@ function Docker-Checked {{ param([string[]]$Arguments) ConvertTo-Json -InputObje
         assert args[args.index(option) + 1] == value
     docker_args = args[:args.index("python")]
     assert "--privileged" not in docker_args and "-p" not in docker_args
+
+
+def test_executable_resolution_selects_one_application_when_path_has_aliases(tmp_path):
+    result = ps(tmp_path, """
+function Get-Command {
+    param($Name, $CommandType, $ErrorAction)
+    [pscustomobject]@{Source='/usr/bin/docker'}
+    [pscustomobject]@{Source='/bin/docker'}
+}
+$resolved = Resolve-TestExecutable 'docker'
+if ($resolved -is [array]) { throw 'Executable resolution returned multiple paths' }
+$resolved | ConvertTo-Json -Compress
+""")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == '/usr/bin/docker'
