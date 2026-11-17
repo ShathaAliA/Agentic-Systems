@@ -2,14 +2,14 @@
 param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\18\bin',
     [string]$Python,
-    [ValidateSet('tests/test_c06_conversations_postgres.py', 'tests/test_c06_result_store_postgres.py', 'tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
+    [ValidateSet("tests/test_c06_sealing_postgres.py", 'tests/test_c06_conversations_postgres.py', 'tests/test_c06_result_store_postgres.py', 'tests/test_tenant_contract_postgres.py', 'tests/test_database_isolation_postgres.py', 'tests/test_core_lifecycle_postgres.py', 'tests/test_core_access_postgres.py', 'tests/test_role_policies_postgres.py', 'tests/test_authentication_postgres.py',
                  'tests/test_users_postgres.py', 'tests/test_departments_postgres.py', 'tests/test_usage_postgres.py')]
     [string]$TestFile = 'tests/test_role_policies_postgres.py'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-isolation.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$testDatabase = if ($TestFile -in @('tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
+$testDatabase = if ($TestFile -in @('tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
 if (-not $Python) { $Python = Join-Path $repo '.local/rbac-venv/Scripts/python.exe' }
 $Python = Resolve-TestExecutable $Python
 foreach ($binary in @('initdb.exe', 'pg_ctl.exe', 'createdb.exe', 'pg_dump.exe', 'pg_dumpall.exe', 'pg_restore.exe')) {
@@ -60,6 +60,7 @@ try {
     $env:RUN_AUTH_POSTGRES_TESTS = '1'
     $env:AUTH_TEST_BACKUP_ACK = '1'
     $env:AUTH_TEST_NATIVE_POSTGRES = '1'
+    $env:AUTH_TEST_POSTGRES_BIN = $PostgresBin
     $env:AUTH_TEST_REPORT_DIR = $state
     $env:AUTH_TEST_ADMIN_URL_FILE = $urlFile
     & $Python -m pytest -q $TestFile --isolated-postgres --junitxml (Join-Path $state 'results.xml') --tb=short -p no:cacheprovider
