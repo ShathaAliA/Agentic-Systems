@@ -187,3 +187,45 @@ previous native PostgreSQL checks are additional evidence; they were not repeate
 unnecessarily. No live provider, embedding-quality or production-image acceptance
 is implied. Local commits are split by migrations, runtime boundaries, offline
 contracts, PostgreSQL pipeline tests, CI/tooling and documentation. No publication.
+
+## Concurrent remote update reconciliation — resumed 2026-11-17
+
+The six original repair commits are retained at the local-only safety reference
+`safety/documents-before-rebase-6d626e5`. They were rebased without patch changes
+onto remote c077e43; no merge or force push is needed. The peer commit remains in
+history. Its unsafe current defaults/tests/docs are corrected additively:
+
+- .env.example restores disabled auth, private URL-file references and separate
+  identities; removes inline administrator URLs, legacy passwords and assumed
+  provider prices/credentials. This is an example only, not a real .env file.
+- test_e2e_documents uses the same guarded fresh-cluster fixture as the other
+  suites. No fixed database URL, DROP DATABASE or connection termination.
+  Explicit audience/context inputs and positive retrieval assertions prevent
+  vacuous cross-department success. It tests storage behavior, not real extraction.
+- API and release documents now reflect JSON/version guards, reviewer-only text,
+  archive permission, disabled question delivery, pending Core Gate 4 and failed
+  Legal. No instruction to retry/activate Legal or publish ready:true remains.
+- Safety regressions guard the shared fixture and credential-free template.
+  The repaired E2E suite is included in the six-suite pgvector CI matrix.
+
+Verified on the reconciled working tree before publication:
+
+| Evidence | Actual result |
+| --- | --- |
+| Full offline suite | 468 passed; 0 failures/errors/skips |
+| Existing five pgvector suites | 26 passed on five fresh clusters |
+| Repaired peer E2E | 3 passed on a further fresh cluster |
+| Total distinct pgvector cases | 29 passed |
+
+An initial private E2E launcher used the wrong filename and collected zero tests;
+it was corrected and the actual three tests passed. Zero-test runs are not counted
+as success. A report-copy command also needed its aggregate filename corrected;
+individual XML/log files were recovered without touching credentials or databases.
+
+Unit report: `.local/core-tests/b88a110f039e41df8d470d945b5b81dc/summary.json`.
+Safe pgvector XML/log copies: `.local/ai-documents-6cb009232cd7/reports-rebased`.
+The test daemon shut down gracefully; the owned WSL distro and Docker Desktop
+were both verified stopped. All generated disks/backups remain private and ignored.
+No existing HR/Finance/Legal database was queried, migrated, stopped or deleted.
+No provider request, Gate 4 execution, branch merge or force push occurred.
+Exact-head hosted CI is checked only after the authorized documents-ai push.
