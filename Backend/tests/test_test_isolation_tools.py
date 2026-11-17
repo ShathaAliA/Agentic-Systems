@@ -202,3 +202,32 @@ $resolved | ConvertTo-Json -Compress
 """)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == '/usr/bin/docker'
+
+
+def test_pgvector_ci_matrix_is_admitted_by_testfile_not_image_parameter(tmp_path):
+    import re
+    import yaml
+    workflow = yaml.load((ROOT / '.github/workflows/core.yml').read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    matrix = next(step['run'] for step in workflow['jobs']['unit-and-container']['steps']
+                  if step.get('name') == 'Real document migrations and tenant ACLs on isolated pgvector')
+    files = set(re.findall(r'tests/test_[A-Za-z0-9_]+\.py', matrix))
+    assert len(files) == 6
+    for filename in ('test-auth-postgres.ps1', 'test-auth-postgres-native.ps1'):
+        path = str(TOOLS / filename).replace("'", "''")
+        result = ps(tmp_path, """
+$ast = [System.Management.Automation.Language.Parser]::ParseFile('""" + path + """', [ref]$null, [ref]$null)
+$sets = @{}
+foreach ($parameter in $ast.ParamBlock.Parameters) {
+    $name = $parameter.Name.VariablePath.UserPath
+    if ($name -in @('TestFile', 'PostgresImage')) {
+        $attribute = $parameter.Attributes | Where-Object { $_.TypeName.FullName -eq 'ValidateSet' } | Select-Object -First 1
+        $sets[$name] = @($attribute.PositionalArguments | ForEach-Object { $_.Value })
+    }
+}
+$sets | ConvertTo-Json -Depth 5 -Compress
+""")
+        assert result.returncode == 0, result.stderr
+        sets = json.loads(result.stdout)
+        assert files <= set(sets['TestFile']), filename
+        if filename == 'test-auth-postgres.ps1':
+            assert set(sets['PostgresImage']) == {'postgres:17-alpine', 'pgvector/pgvector:pg17'}

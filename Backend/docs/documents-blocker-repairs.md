@@ -242,3 +242,12 @@ Resolve-TestExecutable now selects the first resolved application explicitly.
 A synthetic PowerShell regression proves duplicate PATH aliases return one string.
 Local-socket validation, non-root client restrictions and ownership-checked cleanup
 remain unchanged. The follow-up commit requires its own exact-head hosted run.
+
+The next hosted head 51b9432 passed unit/native PostgreSQL, Docker builds and smoke,
+and then passed 21 document cases plus the real tenant provisioning case on
+pgvector. Its third suite was rejected before collection by TestFile validation:
+an earlier edit had put the four additional test filenames in PostgresImage's
+allowlist instead of TestFile's. Both lists are now corrected. A parsed-parameter
+regression checks every actual CI suite against TestFile for both runners and
+requires exactly the two supported PostgreSQL images. No allowlist is removed or
+widened to arbitrary files/images; isolation and cleanup restrictions remain.
