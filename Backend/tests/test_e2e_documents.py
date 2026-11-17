@@ -1,6 +1,7 @@
 """E2E: Documents lifecycle (upload → extract → approve → retrieve → archive).
 
-⚠️ Does NOT use LLM — tests verbatim retrieval (retrieve_relevant_chunks).
+Storage-level regressions with deterministic vectors; no extraction or LLM.
+The actual authenticated PDF lifecycle is test_document_pipeline_postgres.py.
 
 Run:
     pytest tests/test_e2e_documents.py -v --isolated-postgres
@@ -15,7 +16,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.documents.models import (
-    Document, DocumentChunk, DocumentVersion, DocumentAuditLog,
+    Document, DocumentChunk, DocumentVersion, DocumentAuditLog, DocumentAudience,
 )
 from app.documents import rag_service
 
@@ -24,30 +25,10 @@ pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND / "tenant_alembic.ini"
-ADMIN_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5435/postgres"
-
-
-@pytest.fixture(scope="module")
-def fresh_db():
-    db_name = f"dept_{uuid.uuid4().hex}"
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-        c.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin.dispose()
-
-    url = f"postgresql+psycopg://postgres:postgres@127.0.0.1:5435/{db_name}"
-    yield {"db_name": db_name, "url": url}
-
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT", hide_parameters=True)
-    with admin.connect() as c:
-        c.execute(text(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = :db AND pid <> pg_backend_pid()"
-        ), {"db": db_name})
-        c.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
-    admin.dispose()
+# Only the guarded fresh-cluster runner may supply a connection. No fixed
+# URL, connection termination or database deletion is performed by this suite.
+from document_test_infrastructure import fresh_db
+from test_authentication_postgres import isolated_postgres
 
 
 def _migrate(url):
@@ -55,7 +36,7 @@ def _migrate(url):
     cfg = Config(str(CONFIG_PATH))
     with engine.begin() as conn:
         cfg.attributes["connection"] = conn
-        command.upgrade(cfg, "tenant_0007")
+        command.upgrade(cfg, "head")
     return engine
 
 
@@ -78,6 +59,7 @@ def test_full_document_lifecycle(fresh_db):
             )
             db.add(doc); db.commit(); db.refresh(doc)
 
+            db.add(DocumentAudience(document_id=doc.id,department_id="hr",role_id="reader",created_by="test_user"))
             db.add(DocumentVersion(document_id=doc.id, version_number=1, status="pending"))
             db.add(DocumentAuditLog(
                 document_id=doc.id, action="upload",
@@ -92,7 +74,7 @@ def test_full_document_lifecycle(fresh_db):
             db.commit()
 
             # 2) Verify: pending not in RAG
-            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5)
+            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5, user_department_ids=["hr"], user_role_ids=["reader"])
             assert all(r["document_id"] != doc.id for r in results), (
                 "Pending doc should NOT be in RAG"
             )
@@ -112,7 +94,7 @@ def test_full_document_lifecycle(fresh_db):
             db.commit()
 
             # 4) Retrieve after approve
-            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5)
+            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5, user_department_ids=["hr"], user_role_ids=["reader"])
             assert any(r["document_id"] == doc.id for r in results), (
                 "Approved doc should be in RAG"
             )
@@ -135,7 +117,7 @@ def test_full_document_lifecycle(fresh_db):
             db.commit()
 
             # 6) Retrieve after archive — excluded
-            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5)
+            results = rag_service.retrieve_relevant_chunks(db, "إجازة", "hr", limit=5, user_department_ids=["hr"], user_role_ids=["reader"])
             assert all(r["document_id"] != doc.id for r in results), (
                 "Archived doc should NOT be in RAG"
             )
@@ -153,7 +135,7 @@ def test_full_document_lifecycle(fresh_db):
 
 
 def test_revise_creates_new_version_old_archived(fresh_db):
-    """Revise → new version, old version archived, both chunks exist."""
+    """Storage-only revision preserves prior chunks alongside a pending version."""
     engine = _migrate(fresh_db["url"])
     try:
         with Session(engine) as db:
@@ -211,6 +193,7 @@ def test_cross_department_isolation(fresh_db):
                     department_id=dept, status="approved", version=1,
                 )
                 db.add(doc); db.commit(); db.refresh(doc)
+                db.add(DocumentAudience(document_id=doc.id,department_id=dept,role_id="reader",created_by="test_user"))
                 db.add(DocumentVersion(document_id=doc.id, version_number=1, status="approved"))
                 db.commit()
                 rag_service.process_and_store_chunks(
@@ -219,9 +202,9 @@ def test_cross_department_isolation(fresh_db):
                 db.commit()
 
             # HR query
-            results = rag_service.retrieve_relevant_chunks(db, "content", "hr", limit=10)
-            for r in results:
-                assert r["document_id"] != doc.id or r.get("version_number") == 1
+            results = rag_service.retrieve_relevant_chunks(db, "content", "hr", limit=10, user_department_ids=["hr"], user_role_ids=["reader"])
+            hr_doc = db.query(Document).filter(Document.department_id == "hr").one()
+            assert results and all(r["document_id"] == hr_doc.id for r in results)
             # Verify: no finance doc leaked
             finance_doc = db.query(Document).filter(Document.department_id == "finance").first()
             assert all(r["document_id"] != finance_doc.id for r in results), (
