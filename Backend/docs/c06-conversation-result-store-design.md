@@ -315,3 +315,14 @@ no runtime child INSERT. Runtime requires the new revision and safe grants;
 Gates 4.2 onward remain unimplemented. This supersedes the historical writer_txid
 same-transaction sealing description, not the approved separate database or result
 authority. No live activation is authorized. See [Gate 4.1](c06-gate4-1-sealing.md).
+
+## Gate 4.2 trusted binding update
+
+Core now defines an explicit source-authorizer provider contract and a
+three-argument single-department result-store shim. Existing metadata factories
+remain one-argument. HTTP history binds each result to stored owner/scope, fails
+closed without a provider and masks per-message verification failures. Provider
+exceptions are sanitized and current Core access is rechecked after provider IO.
+No real Documents provider, tenant wiring, public question intake or U1 coordinator
+is supplied. This supersedes the earlier generic-callback integration placeholder;
+see [Gate 4.2](c06-gate4-2-authorization.md) for the contract and remaining boundaries.

@@ -163,3 +163,20 @@ Actual local verification: 410 offline unit tests; 8 new PostgreSQL seal tests;
 errors or skips. Clusters were pre-backed-up, confirmed stopped and retained.
 No docs-ai edit, live HR/Finance/Legal/Central access, provider, push or merge.
 No Gate 4.2 work. See c06-gate4-1-sealing.md for grants, limitations and evidence.
+
+## 2026-11-17 — Gate 4.2 local source-binding checkpoint
+
+Implemented Core-owned SourceAuthorizerProvider, immutable conversation binding and
+the single-department three-argument ConversationResultStoreFactory shim. The
+one-argument metadata factory remains unchanged. HTTP history resolves source
+authorization per result from stored conversation scope. Missing providers disable
+content; explicit approval requires literal True. Provider errors are sanitized,
+payloads copied and current Core access rechecked after provider IO. Existing
+per-message masking prevents one provider failure from breaking the history page.
+
+Final offline suite: 423 passed. Fresh PostgreSQL 18.6: 24 binding + 16 storage +
+13 history/concurrency + 8 sealing/restore = 61 distinct cases passed, zero skips.
+No documents-ai edit, migration change, tenant provider implementation, LLM call,
+live HR/Finance/Legal/Central access, push or merge. Legal was not queried/activated.
+Actual tenant authorization and U1 lifecycle remain pending. See
+c06-gate4-2-authorization.md for the contract, evidence and timeout/race limitations.
