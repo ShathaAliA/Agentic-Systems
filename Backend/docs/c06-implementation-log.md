@@ -148,3 +148,18 @@ See [Gate 3 contract, commands and limits](c06-gate3-verification.md). No Docker
 hosted CI, real source adapter, RAG/LLM, full restore or encryption deployment is
 claimed in this batch. Gate 4, public question intake and audited global Admin
 history access remain future work. No push/merge; reviewable local commits only.
+
+
+## 2026-11-17 — Gate 4.1 local sealing checkpoint
+
+Approved scope implemented on feature/core-backend only: additive c06_0003,
+DB-derived source rows, parent-only adapter writes, limited definer identity and
+fail-closed runtime configuration. Historical c06_0001/0002 and all existing
+Central/tenant migration files remain unchanged. Legacy txid collision reproduced
+on a fresh PG18.6 cluster; new seal and focused full-restore tests passed.
+
+Actual local verification: 410 offline unit tests; 8 new PostgreSQL seal tests;
+16 Gate 2 and 13 Gate 3 PostgreSQL regressions. All final suites had zero failures,
+errors or skips. Clusters were pre-backed-up, confirmed stopped and retained.
+No docs-ai edit, live HR/Finance/Legal/Central access, provider, push or merge.
+No Gate 4.2 work. See c06-gate4-1-sealing.md for grants, limitations and evidence.

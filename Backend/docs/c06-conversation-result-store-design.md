@@ -306,3 +306,12 @@ conversation/turn references and internal completed-U1 linking. No actual
 document/RAG/source adapter or public question submission is connected. See
 [Gate 3 contract/verification](c06-gate3-verification.md) and retain
 [Gate 2 security limits](c06-gate2-verification.md).
+
+
+## Gate 4.1 local sealing update
+
+The user-approved sealing slice adds c06_0003 and DB-side source derivation with
+no runtime child INSERT. Runtime requires the new revision and safe grants;
+Gates 4.2 onward remain unimplemented. This supersedes the historical writer_txid
+same-transaction sealing description, not the approved separate database or result
+authority. No live activation is authorized. See [Gate 4.1](c06-gate4-1-sealing.md).
