@@ -19,7 +19,7 @@ def test_store_migration_graph_is_separate_and_cannot_resolve_credentials():
     backend = Path(__file__).resolve().parents[1]
     with patch("sqlalchemy.create_engine", side_effect=AssertionError("No engine allowed")):
         scripts = ScriptDirectory(str(backend / "result_store_alembic"))
-        assert scripts.get_heads() == ["c06_0002"] and scripts.get_bases() == ["c06_0001"]
+        assert scripts.get_heads() == ["c06_0003"] and scripts.get_bases() == ["c06_0001"]
         with pytest.raises(RuntimeError, match="Explicit isolated store migration connection required"):
             command.upgrade(Config(str(backend / "result_store_alembic.ini")), "head")
 
@@ -61,3 +61,12 @@ def test_wrong_database_and_wrong_owner_are_denied_before_connection():
     with pytest.raises(UsageError, match="result_owner_forbidden"):
         store.load_authorized("outsider", answer()["question_request_id"])
     engine.begin.assert_not_called()
+
+
+def test_published_c06_migrations_are_not_rewritten():
+    from pathlib import Path
+    from hashlib import sha256
+    baseline = {'c06_0001_results.py': 'dc5e2e907d5b5126050927cb844e2d2190552d61b56a41fd560127caa552c9f9', 'c06_0002_conversations.py': '64a1a4f0bb5bbcbae6bdfaee5820b9aece899ebd4df2b508f723212730591e2f'}
+    root = Path(__file__).parents[1] / 'result_store_alembic/versions'
+    for name, expected in baseline.items():
+        assert sha256((root/name).read_bytes().replace(b'\r\n',b'\n')).hexdigest()==expected, name

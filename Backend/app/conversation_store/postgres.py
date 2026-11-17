@@ -71,6 +71,30 @@ class PostgresResultStore:
                 identity = conn.execute(text("SELECT current_database(), kind, version FROM public.c06_store_identity")).all()
                 if identity != [(self.database, "conversation_results", 1)]:
                     raise UsageError(503, "result_store_identity_invalid")
+                sealed = conn.execute(text("""
+                    SELECT (SELECT version_num FROM public.c06_store_version)='c06_0003'
+                      AND NOT has_any_column_privilege(current_user,'public.c06_result_sources','INSERT')
+                      AND NOT has_schema_privilege(current_user,'public','CREATE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class t
+                        JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace
+                        WHERE n.nspname='public' AND t.relname IN
+                          ('c06_results','c06_result_sources','c06_conversations','c06_turns')
+                        AND pg_has_role(current_user,t.relowner,'MEMBER'))
+                      AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+                        JOIN pg_catalog.pg_roles owner ON owner.oid=p.proowner
+                        WHERE n.nspname='public' AND p.proname='c06_derive_result_sources'
+                          AND p.pronargs=0 AND p.prosecdef
+                          AND p.proconfig @> ARRAY['search_path=pg_catalog','row_security=on']
+                          AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles inherited
+                            WHERE pg_has_role(owner.oid,inherited.oid,'MEMBER') AND
+                            (inherited.rolsuper OR inherited.rolcreatedb OR inherited.rolcreaterole
+                             OR inherited.rolreplication OR inherited.rolbypassrls
+                             OR left(inherited.rolname,3)='pg_')))
+                      AND NOT has_function_privilege(current_user,'public.c06_derive_result_sources()','EXECUTE')
+                """)).scalar_one()
+                if sealed is not True:
+                    raise UsageError(503, "result_store_sealing_configuration_invalid")
                 conn.execute(text("SELECT set_config('app.c06_user_id', :user, true)"), {"user": self.user_id})
                 yield conn
         except IntegrityError as exc:
@@ -91,10 +115,8 @@ class PostgresResultStore:
                 VALUES (:request,:owner,:fingerprint,:outcome,1,CAST(:payload AS jsonb),:hash)"""),
                 dict(request=result.request_id, owner=result.user_id, fingerprint=result.fingerprint,
                      outcome=result.outcome, payload=encoded, hash=sha256(encoded.encode()).hexdigest()))
-            for ordinal, source in enumerate(payload["sources"]):
-                conn.execute(text("""INSERT INTO public.c06_result_sources(request_id,owner_id,ordinal,source)
-                    VALUES (:request,:owner,:ordinal,CAST(:source AS jsonb))"""),
-                    dict(request=result.request_id, owner=result.user_id, ordinal=ordinal, source=canonical(source)))
+            # c06_0003 derives all source rows in the same DB transaction.
+            # Runtime intentionally has no direct INSERT privilege on that table.
 
     def load_authorized(self, user_id: str, request_id: str) -> StoredQuestionResult | None:
         if user_id != self.user_id:
