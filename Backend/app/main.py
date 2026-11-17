@@ -17,12 +17,14 @@ from app.response_security import ResponseSecurityMiddleware
 from app.conversation_store.routes import router as conversations_router
 
 
-def create_app(*, central_engine=None, auth_settings=None, conversation_store_factory=None):
+def create_app(*, central_engine=None, auth_settings=None, conversation_store_factory=None,
+               source_authorizer_provider=None):
     app = FastAPI(title="AI Platform API", description="Backend API for the AI Platform", version="0.1.0")
     # Explicit engine injection is for tests; runtime obtains the guarded engine.
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
     app.state.conversation_store_factory = conversation_store_factory
+    app.state.source_authorizer_provider = source_authorizer_provider
     app.include_router(auth_router)
     app.include_router(departments_router)
     app.include_router(users_router)

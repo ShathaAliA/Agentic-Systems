@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.auth.dependencies import get_current_user, get_central_session
 from app.conversation_store.conversations import ConversationService
+from app.conversation_store.authorization import ConversationResultStoreFactory
 from app.usage.service import UsageError
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
@@ -29,7 +30,8 @@ def conversation_service(request: Request, user=Depends(get_current_user), sessi
     factory = request.app.state.conversation_store_factory
     if factory is None: raise HTTPException(503, "Conversation store is not configured")
     try:
-        store = factory(user.id)
+        store = ConversationResultStoreFactory(factory, session.get_bind(),
+            request.app.state.source_authorizer_provider).metadata_for(user.id)
     except UsageError as e:
         raise HTTPException(e.status, e.code) from None
     if store.user_id != user.id: raise HTTPException(503, "Conversation store identity mismatch")

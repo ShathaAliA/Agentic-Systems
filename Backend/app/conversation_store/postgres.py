@@ -141,7 +141,15 @@ class PostgresResultStore:
                 or sha256(canonical(payload).encode()).hexdigest() != row["payload_hash"]):
             raise UsageError(503, "question_result_integrity_error")
         # The callback only sees a copy: a callback cannot rewrite the delivered record.
-        decision = self.authorize(user_id, json.loads(canonical(payload)))
+        try:
+            decision = self.authorize(user_id, json.loads(canonical(payload)))
+        except UsageError as exc:
+            if exc.status == 403:
+                raise UsageError(403, "question_source_access_revoked") from None
+            raise UsageError(503, "source_authorizer_unavailable") from None
+        except Exception:
+            # Provider errors can contain tenant SQL, credentials or source text.
+            raise UsageError(503, "source_authorizer_unavailable") from None
         if decision is not True:
             raise UsageError(403, "question_source_access_revoked")
         return record
