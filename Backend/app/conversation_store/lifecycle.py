@@ -1,7 +1,7 @@
 """Internal question lifecycle inside an owned conversation. No HTTP route, provider or
 document import: process, authorize_content and the quote provider are injected."""
 from typing import Callable
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
@@ -63,6 +63,10 @@ class QuestionLifecycleService:
             authorize_content: Callable[[str, QuestionCommand], bool],
             process: Callable[[AccountingContext, QuestionCommand], PreparedQuestionResult]) -> dict:
         """Trusted synchronous call; run off the async loop. Identity is the store's bound user."""
+        try:  # A malformed identifier must be a client error, not a masked database failure.
+            conversation_id = str(UUID(str(conversation_id)))
+        except ValueError:
+            raise UsageError(422, "invalid_conversation_id") from None
         self.conversations.require_active()
         if self.quote_provider is None:
             raise UsageError(503, "question_quote_unavailable")

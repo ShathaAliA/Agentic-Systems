@@ -189,3 +189,11 @@ via the Docker runner: 11 new lifecycle tests plus 16/13/24/7 regression tests p
 (1 native-only restore drill skipped); offline 409 passed with one environmental
 failure. Native 18.6, c06_0003 upgrade path and hosted CI not run. No push or merge.
 See c06-gate4-3-verification.md.
+
+## 2026-11-19 — Gate 4.4 local isolation/security checkpoint
+
+20 new PostgreSQL cases covering lost access, revocation during processing, owner and
+Admin isolation, RLS, runtime privileges, hostile text, secret handling, scope integrity,
+input validation and quota. One finding fixed: malformed conversation ids now return 422
+instead of a masked 503. Docker runner, PostgreSQL 17.10: 20 + 11 passed. No push or merge.
+See c06-gate4-4-verification.md.

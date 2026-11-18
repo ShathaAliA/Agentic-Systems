@@ -2,7 +2,7 @@
 param(
     [string]$Docker = "docker",
     [string]$Image = "ai-platform-core:test",
-    [ValidateSet("tests/test_c06_authorization_postgres.py", "tests/test_c06_lifecycle_postgres.py", "tests/test_c06_sealing_postgres.py", "tests/test_c06_conversations_postgres.py", "tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
+    [ValidateSet("tests/test_c06_authorization_postgres.py", "tests/test_c06_lifecycle_postgres.py", "tests/test_c06_security_postgres.py", "tests/test_c06_sealing_postgres.py", "tests/test_c06_conversations_postgres.py", "tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
     [string]$TestFile = "tests/test_authentication_postgres.py"
 )
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,7 @@ Assert-LocalTestDocker $Docker
 $testUser = Get-TestClientUser
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $backendRoot = Join-Path $repoRoot "Backend"
-$testDatabase = if ($TestFile -in @('tests/test_c06_authorization_postgres.py','tests/test_c06_lifecycle_postgres.py','tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
+$testDatabase = if ($TestFile -in @('tests/test_c06_authorization_postgres.py','tests/test_c06_lifecycle_postgres.py','tests/test_c06_security_postgres.py','tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "ai-auth-test-$suffix"
 $network = "ai-auth-network-$suffix"
