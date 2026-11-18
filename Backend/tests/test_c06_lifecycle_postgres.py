@@ -17,6 +17,7 @@ from app.usage.service import UsageError
 from c06_store_fixtures import DEPARTMENT, answer
 from test_c06_conversations_postgres import context, create
 from test_c06_result_store_postgres import engines, store, pytestmark
+from test_usage import usage
 
 QUESTION = "ما مدة حفظ السجلات؟"
 
@@ -47,9 +48,11 @@ def debit(central):
         return s.scalar(select(func.coalesce(func.sum(UsageEntry.question_delta), 0)))
 
 
-def count(service, table):
+def count(service, table, identity):
+    """Rows for ONE conversation: the store is shared by the module and is immutable."""
+    where = {"c06_results": "payload->>'conversation_id'=:id"}.get(table, "conversation_id=CAST(:id AS uuid)")
     with service.store.connection() as c:
-        return c.scalar(text(f"SELECT count(*) FROM public.{table}"))
+        return c.scalar(text(f"SELECT count(*) FROM public.{table} WHERE {where}"), {"id": str(identity)})
 
 
 def test_answer_links_turn_and_replay_keeps_one_debit_and_dispatch(lifecycle):
@@ -61,9 +64,9 @@ def test_answer_links_turn_and_replay_keeps_one_debit_and_dispatch(lifecycle):
     second = ask(svc, identity, key, make_process(identity, calls))
     assert second["status"] == "answered" and second["replayed"] and second["turn"]["sequence"] == 1
     assert len(calls) == 1 and debit(central) == -1
-    assert count(service, "c06_turns") == 1 and count(service, "c06_question_intents") == 1
+    assert count(service, "c06_turns", identity) == 1 and count(service, "c06_question_intents", identity) == 1
     with service.store.connection() as c:
-        assert c.scalar(text("SELECT context_revision FROM public.c06_question_intents")).endswith(":0")
+        assert c.scalar(text("SELECT context_revision FROM public.c06_question_intents WHERE conversation_id=CAST(:id AS uuid)"), {"id": identity}).endswith(":0")
 
 
 def test_no_answer_charges_one_unit_and_links(lifecycle):
@@ -79,7 +82,7 @@ def test_same_key_with_changed_question_conflicts_without_effects(lifecycle):
     ask(svc, identity, key, make_process(identity, calls))
     with pytest.raises(UsageError, match="question_request_conflict"):
         ask(svc, identity, key, make_process(identity, calls), question="سؤال مختلف")
-    assert len(calls) == 1 and debit(central) == -1 and count(service, "c06_turns") == 1
+    assert len(calls) == 1 and debit(central) == -1 and count(service, "c06_turns", identity) == 1
 
 
 def test_orchestrator_conversation_and_foreign_conversation_are_refused(lifecycle, context):
@@ -93,7 +96,8 @@ def test_orchestrator_conversation_and_foreign_conversation_are_refused(lifecycl
                                      quote_provider=lambda _: 10)
     with pytest.raises(UsageError, match="conversation_not_found"):
         ask(other, mine, "ask-" + uuid4().hex, make_process(mine, calls))
-    assert calls == [] and debit(central) == 0 and count(service, "c06_question_intents") == 0
+    assert calls == [] and debit(central) == 0
+    assert count(service, "c06_question_intents", orchestrator) == 0 and count(service, "c06_question_intents", mine) == 0
 
 
 def test_missing_quote_or_bad_quote_disables_questions_before_any_record(lifecycle):
@@ -113,7 +117,7 @@ def test_unbound_payload_is_never_saved_and_request_stays_uncertain(lifecycle):
     assert first["status"] == "uncertain" and first["response"] is None and first["turn"] is None
     second = ask(svc, identity, key, make_process(identity, calls))
     assert second["status"] == "uncertain" and len(calls) == 1
-    assert count(service, "c06_results") == 0 and count(service, "c06_turns") == 0
+    assert count(service, "c06_results", identity) == 0 and count(service, "c06_turns", identity) == 0
 
 
 def test_crash_between_finish_and_link_recovers_on_replay_without_redispatch(lifecycle):
@@ -122,10 +126,10 @@ def test_crash_between_finish_and_link_recovers_on_replay_without_redispatch(lif
     with patch.object(ConversationService, "append_completed", side_effect=UsageError(503, "result_store_unavailable")):
         with pytest.raises(UsageError, match="result_store_unavailable"):
             ask(svc, identity, key, make_process(identity, calls))
-    assert count(service, "c06_turns") == 0 and count(service, "c06_results") == 1
+    assert count(service, "c06_turns", identity) == 0 and count(service, "c06_results", identity) == 1
     recovered = ask(svc, identity, key, make_process(identity, calls))
     assert recovered["status"] == "answered" and recovered["replayed"] and recovered["turn"]["sequence"] == 1
-    assert len(calls) == 1 and debit(central) == -1 and count(service, "c06_turns") == 1
+    assert len(calls) == 1 and debit(central) == -1 and count(service, "c06_turns", identity) == 1
 
 
 def test_concurrent_identical_requests_dispatch_and_link_once(lifecycle):
@@ -141,7 +145,7 @@ def test_concurrent_identical_requests_dispatch_and_link_once(lifecycle):
     final = ask(svc, identity, key, slow)
     assert final["status"] == "answered" and final["replayed"]
     assert len(calls) == 1 and debit(central) == -1
-    assert count(service, "c06_turns") == 1 and count(service, "c06_question_intents") == 1
+    assert count(service, "c06_turns", identity) == 1 and count(service, "c06_question_intents", identity) == 1
 
 
 def test_revoked_source_on_replay_denies_content_without_redispatch(lifecycle, context):

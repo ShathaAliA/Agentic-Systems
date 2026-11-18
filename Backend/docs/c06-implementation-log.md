@@ -180,3 +180,12 @@ No documents-ai edit, migration change, tenant provider implementation, LLM call
 live HR/Finance/Legal/Central access, push or merge. Legal was not queried/activated.
 Actual tenant authorization and U1 lifecycle remain pending. See
 c06-gate4-2-authorization.md for the contract, evidence and timeout/race limitations.
+
+## 2026-11-19 — Gate 4.3 local question-lifecycle checkpoint
+
+Approved D1: additive c06_0004 (insert-only question intents) and an internal
+QuestionLifecycleService. Runtime now requires c06_0004. Verified on PostgreSQL 17.10
+via the Docker runner: 11 new lifecycle tests plus 16/13/24/7 regression tests passed
+(1 native-only restore drill skipped); offline 409 passed with one environmental
+failure. Native 18.6, c06_0003 upgrade path and hosted CI not run. No push or merge.
+See c06-gate4-3-verification.md.
