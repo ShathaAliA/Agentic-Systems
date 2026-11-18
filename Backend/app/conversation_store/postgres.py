@@ -72,13 +72,14 @@ class PostgresResultStore:
                 if identity != [(self.database, "conversation_results", 1)]:
                     raise UsageError(503, "result_store_identity_invalid")
                 sealed = conn.execute(text("""
-                    SELECT (SELECT version_num FROM public.c06_store_version)='c06_0003'
+                    SELECT (SELECT version_num FROM public.c06_store_version)='c06_0004'
                       AND NOT has_any_column_privilege(current_user,'public.c06_result_sources','INSERT')
                       AND NOT has_schema_privilege(current_user,'public','CREATE')
                       AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class t
                         JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace
                         WHERE n.nspname='public' AND t.relname IN
-                          ('c06_results','c06_result_sources','c06_conversations','c06_turns')
+                          ('c06_results','c06_result_sources','c06_conversations','c06_turns',
+                           'c06_question_intents')
                         AND pg_has_role(current_user,t.relowner,'MEMBER'))
                       AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
                         JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
