@@ -197,3 +197,10 @@ Admin isolation, RLS, runtime privileges, hostile text, secret handling, scope i
 input validation and quota. One finding fixed: malformed conversation ids now return 422
 instead of a masked 503. Docker runner, PostgreSQL 17.10: 20 + 11 passed. No push or merge.
 See c06-gate4-4-verification.md.
+
+## 2026-11-19 — Gate 4.5 local recovery/restore checkpoint
+
+Owner-scoped QuestionRecovery (report, idempotent re-link), a guarded Docker -RestoreDrill that
+restores the finished test store into a new database and verifies it, and a recovery runbook.
+Docker runner, PostgreSQL 17.10: 7 recovery + 5 restore-verification tests passed. Retention
+remains an open company decision. No push or merge. See c06-gate4-5-verification.md.
