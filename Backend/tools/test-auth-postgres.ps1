@@ -114,7 +114,7 @@ try {
             "--mount", "type=bind,source=$state,target=/reports",
             "-e", "APP_ENV=test", "-e", "AUTH_MODE=disabled", "-e", "PYTHON_DOTENV_DISABLED=1",
             "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
-            "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", $Image,
+            "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", "-e", "AUTH_TEST_REPORT_DIR=/reports", $Image,
             "python", "-m", "pytest", "-q", $clientFile, "--isolated-postgres", "--junitxml=/reports/$clientReport", "--tb=short", "-p", "no:cacheprovider")
     }
 }
