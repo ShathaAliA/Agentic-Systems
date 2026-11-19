@@ -204,3 +204,10 @@ Owner-scoped QuestionRecovery (report, idempotent re-link), a guarded Docker -Re
 restores the finished test store into a new database and verifies it, and a recovery runbook.
 Docker runner, PostgreSQL 17.10: 7 recovery + 5 restore-verification tests passed. Retention
 remains an open company decision. No push or merge. See c06-gate4-5-verification.md.
+
+## 2026-11-19 — Gate 4.6 local tooling/contract checkpoint
+
+New groups registered, Docker runner runs the restore drill, docker path resolution fixed,
+drill password moved to a private file, lifecycle integration contract written. Full Docker run:
+all groups passed (c06 lifecycle 11, security 20, recovery 7, restore verification 5); one
+environmental unit failure and one native-only skip. See c06-gate4-6-verification.md.

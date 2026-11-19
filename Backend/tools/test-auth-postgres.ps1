@@ -98,7 +98,11 @@ try {
         Docker-Checked @("exec", $container, "createdb", "-U", $owner, $restored)
         Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-c", "ALTER SCHEMA public OWNER TO c06_store_owner")
         Docker-Checked @("exec", $container, "pg_restore", "-U", $owner, "-d", $restored, "--single-transaction", "--exit-on-error", "--no-owner", "--role=c06_store_owner", "/tmp/c06-restore.dump")
-        Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-c", "REVOKE ALL ON DATABASE $restored FROM PUBLIC", "-c", "GRANT CONNECT ON DATABASE $restored TO c06_test_api", "-c", "ALTER ROLE c06_test_api PASSWORD '$runtimePassword'")
+        Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-c", "REVOKE ALL ON DATABASE $restored FROM PUBLIC", "-c", "GRANT CONNECT ON DATABASE $restored TO c06_test_api")
+        # The throwaway password goes through a private file (mounted into the database
+        # container), never a command argument.
+        [IO.File]::WriteAllText((Join-Path $state "restore-role.sql"), "ALTER ROLE c06_test_api PASSWORD '$runtimePassword';")
+        Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-q", "-f", "/run/auth-test/restore-role.sql")
         $source = (Get-Content -Raw (Join-Path $state "admin.json") | ConvertFrom-Json).url
         $restoredUrl = $source -replace "/$testDatabase$", "/$restored"
         $runtimeUrl = $restoredUrl -replace "auth_test_owner:[0-9a-f]+@", "c06_test_api:${runtimePassword}@"

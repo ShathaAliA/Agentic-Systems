@@ -53,7 +53,8 @@ function Assert-TestState([string]$Repo, [string]$Area, [string]$State) {
 }
 
 function Resolve-TestExecutable([string]$Executable) {
-    try { return (Get-Command -Name $Executable -CommandType Application -ErrorAction Stop).Source }
+    # Windows can list both docker.exe and an extensionless docker; the first PATH match is used.
+    try { return (Get-Command -Name $Executable -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
     catch { throw 'Required test executable is unavailable' }
 }
 

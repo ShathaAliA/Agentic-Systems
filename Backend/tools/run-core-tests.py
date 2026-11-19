@@ -108,6 +108,8 @@ def run(args):
                 command += ["-Python", sys.executable, "-PostgresBin", args.postgres_bin]
             else:
                 command += ["-Docker", args.docker, "-Image", args.image]
+                if group == "c06_recovery":
+                    command.append("-RestoreDrill")  # restore verification rides on this group
             jobs.append((group, command, None, True))
     for name, command, xml, isolated in jobs:
         print(f"Starting {name} ({args.backend if isolated else 'in-memory'})", flush=True)
