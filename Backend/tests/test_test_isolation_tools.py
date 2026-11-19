@@ -211,7 +211,7 @@ def test_pgvector_ci_matrix_is_admitted_by_testfile_not_image_parameter(tmp_path
     matrix = next(step['run'] for step in workflow['jobs']['unit-and-container']['steps']
                   if step.get('name') == 'Real document migrations and tenant ACLs on isolated pgvector')
     files = set(re.findall(r'tests/test_[A-Za-z0-9_]+\.py', matrix))
-    assert len(files) == 6
+    assert len(files) == 7 and 'tests/test_joint_ask_pgvector_postgres.py' in files
     for filename in ('test-auth-postgres.ps1', 'test-auth-postgres-native.ps1'):
         path = str(TOOLS / filename).replace("'", "''")
         result = ps(tmp_path, """

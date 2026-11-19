@@ -41,9 +41,21 @@ history, audience revocation and archived documents, changed question conflicts,
 conversations, provider failure leaving `uncertain` without redispatch, missing provider, unconfigured
 integration, and the legacy table staying empty.
 
+## Real tenant + C06 joint gate (pgvector)
+
+`tests/test_joint_ask_pgvector_postgres.py` closes the gap above on a fresh isolated cluster
+(pgvector image): a real PostgreSQL tenant (tenant migrations, restricted runtime role, real PDF upload,
+review, correction and publication over HTTP, pgvector retrieval) plus a real C06 store database, with Core's
+real lifecycle and Documents' provider. Covered: charge-once and replay with the real cited source
+(document id, version 2, corrected text), archive and audience revocation denying earlier answers and
+masking history without redispatch, a document restricted to another role giving `no_answer` without
+calling the model, provider failure leaving `uncertain`, runtime roles unable to touch the frozen
+`question_results`, and C06 holding no document text. It runs in CI in the pgvector Docker step only (native
+Windows has no pgvector). Only the model call is stubbed and embeddings are deterministic vectors.
+
 ## Not covered
 
-Real tenant PostgreSQL/pgvector combined with the C06 store in one run; embedding quality and answer accuracy
+Embedding quality and answer accuracy
 (no real model); physical source locations (still `reviewed_text` chunk citations, a Documents debt);
 Microsoft Entra and company data; a public conversation/message HTTP route; global Admin history access;
 retention, encryption and external audit. Access is not an atomic snapshot (revocation can race a request
