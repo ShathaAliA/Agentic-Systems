@@ -1,0 +1,35 @@
+# Standalone configuration. Never combine with the application's Compose files.
+name: ${POC_PROJECT:?Use the Phase 1 controller with a new generated run}
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_USER: poc_bootstrap
+      POSTGRES_DB: poc_registry
+      POSTGRES_PASSWORD_FILE: /run/secrets/bootstrap_password
+    secrets: [bootstrap_password, registry_password, tenant_password]
+    labels:
+      ai.poc.phase1.run_id: ${POC_RUN_ID:?Generated run ID required}
+    volumes:
+      - data:/var/lib/postgresql/data
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U poc_bootstrap -d poc_registry"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+secrets:
+  bootstrap_password:
+    file: ${POC_BOOTSTRAP_FILE:?Private generated file required}
+  registry_password:
+    file: ${POC_REGISTRY_FILE:?Private generated file required}
+  tenant_password:
+    file: ${POC_TENANT_FILE:?Private generated file required}
+volumes:
+  data:
+    labels:
+      ai.poc.phase1.run_id: ${POC_RUN_ID:?Generated run ID required}
+networks:
+  isolated:
+    internal: true

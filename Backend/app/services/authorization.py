@@ -35,7 +35,7 @@ def has_permission(
     # 2. Verify department is active
     department = session.get(Department, department_id)
 
-    if department is None or department.status != "active":
+    if department is None or department.archived_at is not None or department.status != "active":
         return False
 
     # 3. Check global permissions

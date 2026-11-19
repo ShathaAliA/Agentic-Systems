@@ -1,0 +1,85 @@
+# Development-only overlay. The existing PostgreSQL volume is never reset.
+services:
+  backend:
+    profiles: [backend]
+    build:
+      context: ./Backend
+      target: runtime
+    image: ai-platform-core:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    environment:
+      APP_ENV: development
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      AUTH_SESSION_SECONDS: ${AUTH_SESSION_SECONDS:-900}
+      AUTH_LOGIN_WINDOW_SECONDS: ${AUTH_LOGIN_WINDOW_SECONDS:-60}
+      AUTH_LOGIN_ACCOUNT_LIMIT: ${AUTH_LOGIN_ACCOUNT_LIMIT:-5}
+      AUTH_LOGIN_IP_LIMIT: ${AUTH_LOGIN_IP_LIMIT:-20}
+      AUTH_LOGIN_GLOBAL_LIMIT: ${AUTH_LOGIN_GLOBAL_LIMIT:-100}
+      DATABASE_URL_FILE: /run/secrets/api_url
+      DEPARTMENT_CREDENTIALS_DIR: /credentials
+      DB_HOST: postgres
+      DB_PORT: "5432"
+    secrets: [api_url]
+    volumes:
+      - type: volume
+        source: provisioning_state
+        target: /credentials
+        read_only: true
+        volume:
+          subpath: day1/tenants
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+  provisioning-worker:
+    profiles: [provisioning]
+    build:
+      context: ./Backend
+      target: runtime
+    image: ai-platform-core:dev
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    entrypoint: [python, -m, app.provisioning.worker]
+    command: []
+    environment:
+      PROVISIONING_REGISTRY_URL_FILE: /run/secrets/registry_url
+      PROVISIONING_ADMIN_URL_FILE: /run/secrets/provisioner_url
+      DEPARTMENT_CREDENTIALS_DIR: /credentials
+      TENANT_CONTRACT_FILE: /run/tenant-contract.json
+      PROVISIONING_MAX_ATTEMPTS: "3"
+    secrets: [registry_url, provisioner_url]
+    volumes:
+      - type: volume
+        source: provisioning_state
+        target: /credentials
+        volume:
+          subpath: day1/tenants
+      - type: bind
+        source: ${TENANT_CONTRACT_FILE:-./Backend/tenant-contract.example.json}
+        target: /run/tenant-contract.json
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+secrets:
+  api_url:
+    file: ${API_URL_FILE:-./.local/api.json}
+  registry_url:
+    file: ${REGISTRY_URL_FILE:-./.local/registry.json}
+  provisioner_url:
+    file: ${PROVISIONER_URL_FILE:-./.local/provisioner.json}
+volumes:
+  provisioning_state:
+    external: true
+    name: ${DAY1_STATE_VOLUME:-ai_platform_day1_dev_state}

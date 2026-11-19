@@ -1,0 +1,9 @@
+{
+  "contract_version": 1,
+  "ready": false,
+  "required_revision": null,
+  "required_tables": [],
+  "table_privileges": {},
+  "sequence_privileges": {},
+  "pending": "Draft only. Real document migrations, reviewed privileges and joint approval are pending."
+}
