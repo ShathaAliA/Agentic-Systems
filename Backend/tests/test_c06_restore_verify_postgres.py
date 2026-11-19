@@ -15,8 +15,9 @@ from app.usage.external_results import StoredQuestionResult
 from app.usage.service import UsageError
 from c06_store_fixtures import answer
 
+DRILL_FILE = os.getenv("RESTORE_DRILL_FILE", "/reports/restore-drill.json")
 pytestmark = [pytest.mark.integration, pytest.mark.skipif(
-    os.getenv("RUN_AUTH_POSTGRES_TESTS") != "1" or not os.getenv("RESTORE_DRILL_FILE"),
+    os.getenv("RUN_AUTH_POSTGRES_TESTS") != "1" or not Path(DRILL_FILE).is_file(),
     reason="Only the guarded Docker restore drill supplies a restored database")]
 
 TABLES = ("c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents")
@@ -24,7 +25,7 @@ TABLES = ("c06_results", "c06_result_sources", "c06_conversations", "c06_turns",
 
 @pytest.fixture(scope="module")
 def drill():
-    cfg = json.loads(Path(os.environ["RESTORE_DRILL_FILE"]).read_text(encoding="utf-8-sig"))
+    cfg = json.loads(Path(DRILL_FILE).read_text(encoding="utf-8-sig"))
     source, admin, runtime = (create_engine(cfg[k], hide_parameters=True)
                               for k in ("source_admin", "restored_admin", "restored_runtime"))
     name = cfg["restored_database"]

@@ -56,3 +56,13 @@ hosted CI (the push will trigger it); end-to-end with a real Documents provider 
 Each Docker run retains one `ai-auth-network-*` network. After roughly twenty runs Docker reports
 `all predefined address pools have been fully subnetted`. Remove only the stopped, runner-labelled
 `ai-auth-network-*` networks (never containers or other networks) and rerun.
+
+## Hosted CI, first run on 045e35d
+
+`postgres-isolation` (native runner, includes the new groups) passed. `unit-and-container` failed:
+`test_docker_client_command_is_non_root_and_capability_restricted` requires exactly one
+`Docker-Checked ... "--rm"` client command in `test-auth-postgres.ps1`, and the restore drill had
+added a second. That test is skipped when `pwsh` is missing, so it did not run in the earlier local
+runs. The runner now uses one client command executed once, or twice with `-RestoreDrill`. With
+`pwsh` available locally the CI unit command gives 422 passed and the one known environmental failure;
+the recovery group and restore drill still pass (7 + 5).
