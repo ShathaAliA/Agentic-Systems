@@ -56,11 +56,31 @@ def engines():
             assert c.scalar(text("SELECT current_database()")) == "c06_result_test"
             owners = c.execute(text("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database ORDER BY datname")).all()
             (report / "c06-owners-acls-before.json").write_text(json.dumps([list(r) for r in owners]), encoding="utf-8")
+        with admin.begin() as c:
+            c.exec_driver_sql("CREATE ROLE c06_store_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS")
+            c.exec_driver_sql("GRANT USAGE,CREATE ON SCHEMA public TO c06_store_owner")
         cfg = Config(str(BACKEND / "result_store_alembic.ini"))
-        for _ in range(2):
+        legacy = None
+        for target in ("c06_0001", "c06_0002", "head", "head"):
             with admin.begin() as c:
+                c.exec_driver_sql("SET LOCAL ROLE c06_store_owner")
+                c.execute(text("SELECT set_config('app.c06_user_id','migration-history',true)"))
                 cfg.attributes.update(connection=c, expected_database="c06_result_test", store_migration_approved=True)
-                migrate.upgrade(cfg, "head")
+                migrate.upgrade(cfg, target)
+                if legacy is None:
+                    item = record(user="migration-history")
+                    c.execute(text("""INSERT INTO c06_results
+                        (request_id,owner_id,fingerprint,outcome,schema_version,payload,payload_hash)
+                        VALUES(:id,:owner,:fp,:outcome,1,CAST(:payload AS jsonb),:hash)"""),
+                        dict(id=item.request_id, owner=item.user_id, fp=item.fingerprint, outcome=item.outcome,
+                             payload=canonical(item.payload), hash=sha256(canonical(item.payload).encode()).hexdigest()))
+                    c.execute(text("INSERT INTO public.c06_result_sources VALUES (:id,:owner,0,CAST(:source AS jsonb))"),
+                        dict(id=item.request_id,owner=item.user_id,source=canonical(item.payload['sources'][0])))
+                    legacy_sources = c.execute(text("SELECT * FROM c06_result_sources WHERE owner_id='migration-history'")).all()
+                    legacy = c.execute(text("SELECT * FROM c06_results WHERE owner_id='migration-history'")).all()
+                else:
+                    assert c.execute(text("SELECT * FROM c06_results WHERE owner_id='migration-history'")).all() == legacy
+                    assert c.execute(text("SELECT * FROM c06_result_sources WHERE owner_id='migration-history'")).all() == legacy_sources
         password = secrets.token_urlsafe(32)
         with psycopg.connect(host=url.host, port=url.port or 5432, dbname=url.database,
                              user=url.username, password=url.password, autocommit=True) as c:
@@ -72,8 +92,8 @@ def engines():
             c.execute("REVOKE TEMPORARY ON DATABASE c06_result_test FROM PUBLIC")
             c.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
             c.execute("GRANT USAGE ON SCHEMA public TO c06_test_api")
-            c.execute("GRANT SELECT ON c06_store_identity TO c06_test_api")
-            c.execute("GRANT SELECT,INSERT ON c06_results,c06_result_sources TO c06_test_api")
+            c.execute("GRANT SELECT ON c06_store_identity,c06_store_version,c06_result_sources TO c06_test_api")
+            c.execute("GRANT SELECT,INSERT ON c06_results,c06_conversations,c06_turns,c06_question_intents TO c06_test_api")
         runtime = create_engine(url.set(username="c06_test_api", password=password), hide_parameters=True)
         with admin.connect() as c:
             after = c.execute(text("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database ORDER BY datname")).all()
@@ -101,9 +121,9 @@ def record(user="employee", outcome="answered"):
 def test_store_migrations_and_no_central_schema(engines):
     admin, _ = engines
     with admin.connect() as c:
-        assert c.scalar(text("SELECT version_num FROM c06_store_version")) == "c06_0001"
+        assert c.scalar(text("SELECT version_num FROM c06_store_version")) == "c06_0004"
         tables = set(c.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public'")))
-        assert tables == {"c06_store_version", "c06_store_identity", "c06_results", "c06_result_sources"}
+        assert tables == {"c06_store_version", "c06_store_identity", "c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents"}
 
 
 def test_reopen_sources_and_revocation(engines):
@@ -155,13 +175,13 @@ def test_atomic_source_failure_rolls_back_result(engines):
     admin, runtime = engines
     item = record()
     with admin.begin() as c:
-        c.execute(text("REVOKE INSERT ON c06_result_sources FROM c06_test_api"))
+        c.exec_driver_sql("CREATE TRIGGER forced_test_failure BEFORE INSERT ON public.c06_result_sources FOR EACH ROW EXECUTE FUNCTION public.c06_refuse_mutation()")
     try:
         with pytest.raises(UsageError, match="result_store_unavailable"):
             store(runtime).save_once(item)
     finally:
         with admin.begin() as c:
-            c.execute(text("GRANT INSERT ON c06_result_sources TO c06_test_api"))
+            c.exec_driver_sql("DROP TRIGGER forced_test_failure ON public.c06_result_sources")
     assert store(runtime).load_authorized(item.user_id, item.request_id) is None
 
 
@@ -249,15 +269,17 @@ def test_cannot_append_sources_to_an_already_committed_result(engines):
 def test_corrupt_raw_rows_are_never_delivered(engines, corruption):
     admin, runtime = engines
     item = record(outcome="no_answer" if corruption == "digest" else "answered")
-    payload = {"bad": True} if corruption == "shape" else item.payload
+    payload = {"bad": True,"sources":[]} if corruption == "shape" else item.payload
     # New disposable test rows deliberately simulate data imported incorrectly.
     # No UPDATE/DELETE or bypass is added to the actual adapter.
     with admin.begin() as c:
+        if corruption == "source_index": c.exec_driver_sql("ALTER TABLE public.c06_results DISABLE TRIGGER derive_result_sources")
         c.execute(text("""INSERT INTO c06_results
             (request_id,owner_id,fingerprint,outcome,schema_version,payload,payload_hash)
             VALUES(:request,'employee',:fp,:outcome,1,CAST(:payload AS jsonb),:hash)"""),
             dict(request=item.request_id, fp=item.fingerprint, outcome=item.outcome,
                  payload=json.dumps(payload), hash=(sha256(canonical(payload).encode()).hexdigest()
                                                    if corruption == "source_index" else "b" * 64)))
+        if corruption == "source_index": c.exec_driver_sql("ALTER TABLE public.c06_results ENABLE TRIGGER derive_result_sources")
     with pytest.raises(UsageError, match="question_result_integrity_error"):
         store(runtime).load_authorized("employee", item.request_id)

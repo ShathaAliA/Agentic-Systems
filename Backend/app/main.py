@@ -15,17 +15,24 @@ from app.users.routes import router as users_router
 from app.users.routes import administrator
 from app.usage.routes import router as usage_router
 from app.role_policies.routes import router as role_policies_router
+from app.conversation_store.routes import router as conversations_router
 
 
-def create_app(*, central_engine=None, auth_settings=None, document_result_store_factory=None):
+def create_app(*, central_engine=None, auth_settings=None, document_result_store_factory=None,
+               conversation_store_factory=None, source_authorizer_provider=None):
     app = FastAPI(
         title="AI Platform API",
         description="Backend API for the AI Platform",
         version="0.1.0",
     )
-    app.state.document_result_store_factory = document_result_store_factory
+    # Explicit engine injection is for tests; runtime obtains the guarded engine.
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
+    # Documents' legacy tenant result factory and Core's C06 conversation store stay separate
+    # injections until the joint integration gate decides the single result authority.
+    app.state.document_result_store_factory = document_result_store_factory
+    app.state.conversation_store_factory = conversation_store_factory
+    app.state.source_authorizer_provider = source_authorizer_provider
 
     # --- Routers ---
     app.include_router(auth_router)
@@ -34,6 +41,7 @@ def create_app(*, central_engine=None, auth_settings=None, document_result_store
     app.include_router(users_router)
     app.include_router(usage_router)
     app.include_router(role_policies_router)
+    app.include_router(conversations_router)
 
     app.add_middleware(ResponseSecurityMiddleware)
 
