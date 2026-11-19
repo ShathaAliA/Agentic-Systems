@@ -19,7 +19,7 @@ from app.conversation_store.routes import router as conversations_router
 
 
 def create_app(*, central_engine=None, auth_settings=None, document_result_store_factory=None,
-               conversation_store_factory=None, source_authorizer_provider=None):
+               conversation_store_factory=None, source_authorizer_provider=None, result_store_factory=None):
     app = FastAPI(
         title="AI Platform API",
         description="Backend API for the AI Platform",
@@ -28,8 +28,23 @@ def create_app(*, central_engine=None, auth_settings=None, document_result_store
     # Explicit engine injection is for tests; runtime obtains the guarded engine.
     app.state.central_engine = central_engine
     app.state.auth_settings = auth_settings or AuthSettings.from_environment()
-    # Documents' legacy tenant result factory and Core's C06 conversation store stay separate
-    # injections until the joint integration gate decides the single result authority.
+    # One C06 result authority serves Core's metadata routes and Documents' /ask. The separate
+    # injections remain for tests; with nothing injected and nothing configured, both stay None
+    # and content/question delivery is disabled (fail closed).
+    if (result_store_factory is None and document_result_store_factory is None
+            and conversation_store_factory is None):
+        from app.integration import SETTING, documents_result_store_factory
+        import os
+        if os.environ.get(SETTING):
+            if central_engine is None:
+                from app.database import engine as central_engine
+            result_store_factory = documents_result_store_factory(central_engine)
+    if result_store_factory is not None:
+        # Core's routes wrap the raw one-argument factory with the provider themselves; /ask
+        # uses the three-argument shim of the same factory object.
+        document_result_store_factory = result_store_factory
+        conversation_store_factory = result_store_factory.metadata_factory
+        source_authorizer_provider = source_authorizer_provider or result_store_factory.provider
     app.state.document_result_store_factory = document_result_store_factory
     app.state.conversation_store_factory = conversation_store_factory
     app.state.source_authorizer_provider = source_authorizer_provider
