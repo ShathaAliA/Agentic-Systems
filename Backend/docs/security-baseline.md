@@ -87,6 +87,14 @@ audit could not run). Treat a leaked secret as compromised: **rotate it**; do no
 Repository settings that only the owner can switch on (not code): secret scanning with push protection, Dependabot
 alerts, and adding `secret-scan` and `dependency-audit` to the required checks of the `Backend` protection rule.
 
+Baseline gitleaks scan (2026-11-22, full history): on every ref that exists on GitHub (183 commits) there are
+**no findings**. One false positive (`request_key` example values in `Backend/contracts/document-api-examples.json`)
+is allowlisted by path AND value shape; a test forbids path-only allowlists.
+The local scan of *all* local refs also found `.env` with a `POSTGRES_PASSWORD` in the **unpushed** local `main`
+commit `12dde26`; it exists in no remote ref. Do not push that local `main` as is: drop `.env` from the commit first
+(the owner's decision, since it rewrites an unpushed local commit) and rotate the password if it is used anywhere
+beyond a local development database.
+
 First audit result: `opentelemetry-api` 1.45.1 (CVE-2026-126360, DoS in traceparent parsing, fixed in 1.45.2) was bumped.
 The application does not import it. Not included: container image scanning (Trivy) and static analysis (bandit).
 

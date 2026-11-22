@@ -100,3 +100,14 @@ def test_dependabot_covers_python_actions_and_docker_against_backend():
     ecosystems = {u["package-ecosystem"]: u for u in config["updates"]}
     assert set(ecosystems) == {"pip", "github-actions", "docker"}
     assert all(u["target-branch"] == "Backend" and u["schedule"]["interval"] == "weekly" for u in ecosystems.values())
+
+
+def test_gitleaks_config_keeps_default_rules_and_has_no_blanket_allowlists():
+    import tomllib
+    config = tomllib.loads((ROOT / ".gitleaks.toml").read_text(encoding="utf-8"))
+    assert config["extend"]["useDefault"] is True
+    assert "allowlist" not in config  # the legacy global allowlist form
+    for entry in config.get("allowlists", []):
+        assert entry["description"].strip()
+        assert entry["condition"] == "AND" and entry["paths"] and entry["regexes"]  # path AND value shape
+        assert all(".*" != path.strip("^$") for path in entry["paths"])
