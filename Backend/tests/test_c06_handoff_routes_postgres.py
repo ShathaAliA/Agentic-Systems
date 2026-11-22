@@ -20,11 +20,11 @@ def world(engines, usage):
     dept = "d" + uuid4().hex[:8]
     with Session(central) as s:
         s.add_all([Department(id=dept, name="Handoff " + dept), Permission(id="hq", code=access.REQUEST),
-                   Permission(id="hh", code=access.HANDLE), Role(id="handoff-handler", name="Handoff Handler", scope="department")])
+                   Permission(id="hh", code=access.HANDLE), Permission(id="ha", code=access.AUDIT), Role(id="handoff-handler", name="Handoff Handler", scope="department")])
         s.flush()
         s.add_all([DepartmentMembership(user_id="employee", department_id=dept),
                    DepartmentMembership(user_id="outsider", department_id=dept),
-                   RolePermission(role_id="reader", permission_id="hq"), RolePermission(role_id="handoff-handler", permission_id="hh"),
+                   RolePermission(role_id="reader", permission_id="hq"), RolePermission(role_id="administrator", permission_id="ha"), RolePermission(role_id="handoff-handler", permission_id="hh"),
                    RoleAssignment(user_id="employee", role_id="reader", department_id=dept),
                    RoleAssignment(user_id="outsider", role_id="handoff-handler", department_id=dept)])
         s.commit()
@@ -124,4 +124,27 @@ def test_bell_counter_and_feed_over_http(world):
     assert client.get("/api/notifications?limit=0", headers=h["employee"]).status_code == 422
     client.post(f"/api/handoffs/{created}/read", json={}, headers=h["employee"])
     assert bell("employee") == before and not [i for i in mine("employee") if i["handoff_id"] == created]
+    client.post(f"/api/handoffs/{created}/close", headers=h["outsider"])
+
+
+def test_admin_audit_over_http(world):
+    runtime, client, h, dept = world
+    created = client.post("/api/handoffs", json=body(runtime, dept), headers=h["employee"]).json()["handoff_id"]
+    client.post(f"/api/handoffs/{created}/messages", json={"body": "رد القسم"}, headers=h["outsider"])
+    base = "/api/admin/handoffs"
+    for who in ("employee", "outsider"):
+        for path in (base, f"{base}/{created}", f"{base}/{created}/messages", f"{base}/access-log"):
+            assert client.get(path, headers=h[who]).status_code == 403
+    assert client.get(base).status_code == 401
+    listed = client.get(f"{base}?department_id={dept}", headers=h["admin"])
+    assert listed.status_code == 200 and "no-store" in listed.headers["cache-control"]
+    assert [i["handoff_id"] for i in listed.json()["items"]] == [created] and listed.json()["items"][0]["status"] == "claimed"
+    detail = client.get(f"{base}/{created}", headers=h["admin"]).json()
+    assert [e["kind"] for e in detail["events"]] == ["created", "claimed"]
+    assert [m["body"] for m in client.get(f"{base}/{created}/messages", headers=h["admin"]).json()["items"]] == ["رد القسم"]
+    log = client.get(f"{base}/access-log?limit=100", headers=h["admin"]).json()["items"]
+    assert [r["action"] for r in log if r["handoff_id"] == created] == ["read", "read"] and log[0]["actor_id"] == "admin"
+    assert client.get(f"{base}/{uuid4()}", headers=h["admin"]).json()["detail"] == "handoff_not_found"
+    assert client.get(f"{base}/access-log?after=bad", headers=h["admin"]).json()["detail"] == "invalid_cursor"
+    assert client.post(f"/api/handoffs/{created}/claim", headers=h["admin"]).status_code in (403, 404)  # Admin is not a handler
     client.post(f"/api/handoffs/{created}/close", headers=h["outsider"])

@@ -361,3 +361,77 @@ def test_notification_feed_pages_newest_first_and_validates_cursor(world):
         refused(lambda: feed(w, w.emp, after=bad), 422, "invalid_cursor")
     refused(lambda: feed(w, w.emp, limit=0), 422, "invalid_page_limit")
     refused(lambda: feed(w, w.ghost), 403, "handoff_actor_inactive")
+
+
+def audit(w, user):
+    from app.handoffs.audit import HandoffAudit
+    return HandoffAudit(store(w.runtime, user=user), w.central)
+
+
+def log_of(w, handoff_id):
+    return [(r["action"], r["actor_id"]) for r in audit(w, w.admin).access_log(limit=100)["items"] if r["handoff_id"] == handoff_id]
+
+
+def test_admin_audit_is_read_only_complete_and_logged(world):
+    w = world
+    created, _ = make(w)
+    identity = created["handoff_id"]
+    w.svc(w.head).post_message(identity, "رد القسم")
+    w.svc(w.emp).post_message(identity, "شكراً")
+    w.svc(w.head).close(identity)
+    admin = audit(w, w.admin)
+    listed = admin.listing(department_id=w.dept)
+    assert [(i["handoff_id"], i["status"], i["assignee_id"]) for i in listed["items"]] == [(identity, "closed", w.head)]
+    assert "conversation_id" not in listed["items"][0] and listed["items"][0]["message_count"] == 2
+    detail = admin.get(identity)
+    assert [(e["kind"], e["actor_id"]) for e in detail["events"]] == [
+        ("created", w.emp), ("claimed", w.head), ("closed", w.head)]
+    thread = admin.messages(identity)
+    assert [(m["author_role"], m["body"]) for m in thread["items"]] == [("staff", "رد القسم"), ("requester", "شكراً")]
+    assert admin.listing(department_id=w.dept, status="new")["items"] == [] and admin.listing(department_id=w.other)["items"] == []
+    assert log_of(w, identity) == [("read", w.admin)] * 2  # detail and messages, each logged
+    assert [(r["action"], r["department_id"]) for r in admin.access_log(limit=100)["items"] if r["department_id"] == w.dept
+            and r["handoff_id"] is None] == [("list", w.dept)] * 2  # the two filtered listings in that department
+    # Admin never writes handoff content, whatever the service is asked: it is not a party.
+    for call in (lambda: w.svc(w.admin).post_message(identity, "x"), lambda: w.svc(w.admin).claim(identity),
+                 lambda: w.svc(w.admin).close(identity), lambda: w.svc(w.admin).reopen(identity)):
+        refused(call, 404, "handoff_not_found")
+
+
+def test_audit_needs_the_global_permission_and_pages_the_log(world):
+    w = world
+    made = [make(w)[0]["handoff_id"] for _ in range(3)]
+    for who in (w.emp, w.head, w.outsider):
+        refused(lambda: audit(w, who).listing(), 403, "handoff_audit_forbidden")
+        refused(lambda: audit(w, who).get(made[0]), 403, "handoff_audit_forbidden")
+        refused(lambda: audit(w, who).access_log(), 403, "handoff_audit_forbidden")
+    assert log_of(w, made[0]) == []  # refused attempts read and log nothing
+    refused(lambda: audit(w, w.ghost).listing(), 403, "handoff_actor_inactive")
+    admin = audit(w, w.admin)
+    refused(lambda: admin.get(str(uuid4())), 404, "handoff_not_found")
+    refused(lambda: admin.get("nope"), 404, "handoff_not_found")
+    refused(lambda: admin.listing(status="open"), 422, "invalid_handoff_status")
+    first = admin.listing(department_id=w.dept, limit=2)
+    assert [i["handoff_id"] for i in first["items"]] == made[:2] and first["next_cursor"] == made[1]
+    assert [i["handoff_id"] for i in admin.listing(department_id=w.dept, limit=2, after=made[1])["items"]] == made[2:]
+    for _ in range(3):
+        admin.get(made[0])
+    page = admin.access_log(limit=2)
+    assert len(page["items"]) == 2 and page["next_cursor"]
+    assert admin.access_log(limit=2, after=page["next_cursor"])["items"][0] != page["items"][0]
+    refused(lambda: admin.access_log(after="nope"), 422, "invalid_cursor")
+    with Session(w.central) as s:  # revoking the role stops the audit at once
+        for row in s.query(RoleAssignment).filter_by(user_id=w.admin, role_id=w.roles["audit"]).all():
+            s.delete(row)
+        s.commit()
+    refused(lambda: admin.listing(), 403, "handoff_audit_forbidden")
+
+
+def test_audit_connection_cannot_write_content(world):
+    w = world
+    created, _ = make(w)
+    with store(w.runtime, user=w.admin).connection(audit=True) as c:
+        with pytest.raises(Exception):
+            c.execute(text("""INSERT INTO public.c06_handoff_events(id,handoff_id,requester_id,department_id,kind,actor_id,assignee_id)
+                VALUES (gen_random_uuid(),CAST(:h AS uuid),:r,:d,'claimed',:a,:a)"""),
+                dict(h=created["handoff_id"], r=w.emp, d=w.dept, a=w.admin))

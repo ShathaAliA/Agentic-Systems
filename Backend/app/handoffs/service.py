@@ -20,6 +20,7 @@ DEFAULT_OPEN_CAP = 5
 KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,79}")
 DEPARTMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,35}")
 STATUSES = ("new", "claimed", "closed")
+KINDS_BY_STATUS = {"new": ["created", "reopened"], "claimed": ["claimed", "transferred"], "closed": ["closed"]}
 
 # One query gives the whole state: the latest event decides, the assignee is the latest claim or transfer.
 VIEW = """
@@ -28,6 +29,8 @@ SELECT h.id, h.requester_id, h.department_id, h.conversation_id, h.turn_sequence
        CASE WHEN e.kind IN ('claimed','transferred') THEN
             (SELECT a.assignee_id FROM public.c06_handoff_events a WHERE a.handoff_id=h.id
               AND a.kind IN ('claimed','transferred') ORDER BY a.seq DESC LIMIT 1) END AS assignee_id,
+       (SELECT a.assignee_id FROM public.c06_handoff_events a WHERE a.handoff_id=h.id
+         AND a.kind IN ('claimed','transferred') ORDER BY a.seq DESC LIMIT 1) AS last_assignee_id,
        COALESCE((SELECT max(m.sequence) FROM public.c06_handoff_messages m WHERE m.handoff_id=h.id),0) AS last_sequence,
        (SELECT count(*) FROM public.c06_handoff_messages m WHERE m.handoff_id=h.id AND m.author_id<>:actor
           AND m.sequence>COALESCE((SELECT max(r.up_to_sequence) FROM public.c06_handoff_reads r
@@ -236,9 +239,8 @@ class HandoffService:
         where = "h.department_id = ANY(:departments) AND h.requester_id<>:actor"
         params = {"departments": departments}
         if status is not None:
-            kinds = {"new": ["created", "reopened"], "claimed": ["claimed", "transferred"], "closed": ["closed"]}[status]
             where += " AND e.kind = ANY(:kinds)"
-            params["kinds"] = kinds
+            params["kinds"] = KINDS_BY_STATUS[status]
         return self.listing(where, params, limit, after, staff)
 
     def messages(self, identity, limit=50, after=0):

@@ -42,3 +42,18 @@ def staff_departments(session: Session, user_id: str) -> frozenset[str]:
                DepartmentMembership.status == "active", Department.status == "active",
                Department.archived_at.is_(None))).all()
     return frozenset(rows)
+
+
+def may_audit(session: Session, user_id: str) -> bool:
+    """Audit is a global, read-only permission (Admin); it never makes anyone a handler."""
+    user = session.get(User, user_id)
+    if user is None or user.status != "active":
+        return False
+    return session.scalar(
+        select(Permission.id)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(RoleAssignment, RoleAssignment.role_id == Role.id)
+        .where(RoleAssignment.user_id == user_id, RoleAssignment.department_id.is_(None),
+               Role.scope == "global", Permission.code == AUDIT)
+        .limit(1)) is not None

@@ -65,6 +65,10 @@ Tests do not add a runtime universal authorization bypass or trust a role header
 | GET | `/api/notifications` | self |
 | GET | `/api/notifications/count` | self |
 | GET | `/api/admin/handoffs/policy` | core_admin |
+| GET | `/api/admin/handoffs` | core_admin |
+| GET | `/api/admin/handoffs/access-log` | core_admin |
+| GET | `/api/admin/handoffs/{handoff_id}` | core_admin |
+| GET | `/api/admin/handoffs/{handoff_id}/messages` | core_admin |
 | PUT | `/api/admin/handoffs/policy` | core_admin |
 | GET | `/health/db` | core_admin |
 | GET | `/auth/me` | self |
