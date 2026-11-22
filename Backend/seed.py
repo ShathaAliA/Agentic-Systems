@@ -81,6 +81,9 @@ def seed(*, development_fixtures=False, central_engine=None):
                 "documents:delete",
                 "documents:manage_permissions",
                 "audit:read",
+                "handoffs:request",
+                "handoffs:handle",
+                "handoffs:audit",
             ]
             permissions = {}
             for code in permission_codes:
@@ -96,8 +99,10 @@ def seed(*, development_fixtures=False, central_engine=None):
                     "documents:delete",
                     "documents:manage_permissions",
                     "audit:read",
+                    "handoffs:request",
+                    "handoffs:handle",
                 ],
-                "Employee": ["documents:read"],
+                "Employee": ["documents:read", "handoffs:request"],
             }
             for role_name, codes in role_permissions.items():
                 for code in codes:
