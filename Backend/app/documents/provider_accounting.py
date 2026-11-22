@@ -9,8 +9,7 @@ from app.usage.processor import ProviderReceipt, ConfirmedTechnicalFailure
 from app.usage.service import UsageError
 
 
-SUPPORTED_PROVIDERS = {"openai", "groq"}
-
+SUPPORTED_PROVIDERS = {"openai", "groq", "humain"}
 
 @dataclass(frozen=True)
 class Settings:
@@ -114,8 +113,14 @@ def build_client(provider):
             raise UsageError(503, "provider_credentials_missing")
         return OpenAI(api_key=api_key, max_retries=0)
 
-    raise UsageError(503, "metered_provider_not_supported")
+        raise UsageError(503, "metered_provider_not_supported")
 
+    if provider == "humain":
+        base_url = os.getenv("LLM_BASE_URL", "https://api.fuse.humainai.com/v1")
+        api_key = os.getenv("LLM_API_KEY")
+        if not api_key:
+            raise UsageError(503, "provider_credentials_missing")
+        return OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
 
 def generate(settings, query, context, attempt_id, *, client=None):
     prompt = guardrails.build_prompt(query, context)

@@ -84,6 +84,7 @@ def seed(*, development_fixtures=False, central_engine=None):
                 "handoffs:request",
                 "handoffs:handle",
                 "handoffs:audit",
+                "handoffs:convert",
             ]
             permissions = {}
             for code in permission_codes:
@@ -101,6 +102,7 @@ def seed(*, development_fixtures=False, central_engine=None):
                     "audit:read",
                     "handoffs:request",
                     "handoffs:handle",
+                    "handoffs:convert", 
                 ],
                 "Employee": ["documents:read", "handoffs:request"],
             }

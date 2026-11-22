@@ -19,7 +19,6 @@ from app.documents import guardrails
 from app.usage.external_results import PreparedQuestionResult
 from app.conversation_store.conversations import ConversationService
 from app.conversation_store.lifecycle import QuestionLifecycleService
-from app.conversation_store.postgres import PostgresResultStore
 from app.conversation_store.schema import Answer
 
 from app.auth.dependencies import get_central_session as get_central_db
@@ -1021,3 +1020,66 @@ async def delete_document_audience(
     except Exception as e:
         logger.error("Document operation failed")
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
+
+# ------------------------------------------------------------------
+# H6: Convert closed handoff to knowledge (pending_review)
+# ------------------------------------------------------------------
+from app.documents.handoff_knowledge_service import HandoffKnowledgeService
+from sqlalchemy import text
+
+
+@router.post("/api/handoffs/{handoff_id}/knowledge")
+async def convert_handoff_to_knowledge(
+    handoff_id: str,
+    request_key: str,
+    department_id: str,
+    qa_payload: dict,
+    central_db: Session = Depends(get_central_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not has_permission(central_db, current_user.id, "handoffs:convert", department_id):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        # ⚠️ Stub: يقرأ handoff من handoff_sessions (H0+H1)
+        def handoff_lookup(hid: str) -> dict | None:
+            row = central_db.execute(
+                text("""
+                    SELECT handoff_id, state, handler_user_id, department_id
+                    FROM handoff_sessions
+                    WHERE handoff_id = :hid
+                """),
+                {"hid": hid},
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "handoff_id": row[0],
+                "state": row[1],
+                "handler_user_id": row[2],
+                "department_id": row[3],
+            }
+
+        service = HandoffKnowledgeService(
+            handoff_lookup=handoff_lookup,
+            dept_session_factory=lambda: _open_department_session(
+                current_user.id, department_id, "handoffs:convert"
+            ),
+        )
+        result = service.convert(
+            user_id=current_user.id,
+            handoff_id=handoff_id,
+            request_key=request_key,
+            department_id=department_id,
+            qa_payload=qa_payload,
+        )
+        return {
+            "status": result.status,
+            "document_id": result.document_id,
+            "document_version_id": result.document_version_id,
+        }
+    except UsageError as e:
+        raise HTTPException(status_code=e.status, detail=e.code)
+    except Exception:
+        logger.exception("H6 convert error")
+        raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع.")
