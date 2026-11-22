@@ -24,8 +24,8 @@ who also holds that department role. Another authorized Admin must perform it.
 | Role | Allowed configurable permission codes |
 | --- | --- |
 | Admin | Immutable through these APIs |
-| Employee | documents:read |
-| Department Manager / Deputy Department Manager | documents:read, documents:upload, documents:update, documents:manage_permissions, audit:read |
+| Employee | documents:read, handoffs:request |
+| Department Manager / Deputy Department Manager | documents:read, documents:upload, documents:update, documents:manage_permissions, audit:read, handoffs:request, handoffs:handle |
 
 No API creates roles/permissions, changes role scope or enables `documents:delete`.
 Legacy mappings are preserved by migration and reported as unsupported, rather

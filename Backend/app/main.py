@@ -17,6 +17,7 @@ from app.users.routes import administrator
 from app.usage.routes import router as usage_router
 from app.role_policies.routes import router as role_policies_router
 from app.conversation_store.routes import router as conversations_router
+from app.handoffs.routes import admin_router as handoff_admin_router, router as handoffs_router
 
 
 def create_app(*, central_engine=None, auth_settings=None, document_result_store_factory=None,
@@ -66,6 +67,8 @@ def create_app(*, central_engine=None, auth_settings=None, document_result_store
     app.include_router(usage_router)
     app.include_router(role_policies_router)
     app.include_router(conversations_router)
+    app.include_router(handoffs_router)
+    app.include_router(handoff_admin_router)
 
     install_inner(app, security)
     app.add_middleware(ResponseSecurityMiddleware)

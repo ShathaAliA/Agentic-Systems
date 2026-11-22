@@ -22,7 +22,7 @@ def test_central_graph_is_connected_single_head_without_database_configuration()
     assert scripts.get_bases() == ["b8e1db57a78c"]
     assert history[0].revision == heads[0]
     assert {item.revision for item in history} >= {"usage001", "rbac001"}
-    assert heads == ["rbac002_archive"]
+    assert heads == ["handoff001_policy"]
     assert {"usage002_result_payload", "usage003_merge", "usage004_fence"} <= {item.revision for item in history}
 
 

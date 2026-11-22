@@ -36,7 +36,7 @@ def test_migration_heads_and_manifest_fail_closed():
     central.set_main_option("script_location", str(root / "alembic"))
     tenant = Config()
     tenant.set_main_option("script_location", str(root / "tenant_alembic"))
-    assert ScriptDirectory.from_config(central).get_heads() == ["rbac002_archive"]
+    assert ScriptDirectory.from_config(central).get_heads() == ["handoff001_policy"]
     assert ScriptDirectory.from_config(tenant).get_heads() == ["tenant_0008"]
     contract = read_contract(root / "tenant-contract.json")
     assert contract.ready is False
