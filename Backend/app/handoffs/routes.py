@@ -10,6 +10,7 @@ from app.auth.dependencies import get_central_session, get_current_user
 from app.conversation_store.authorization import ConversationResultStoreFactory
 from app.departments.service import DepartmentError
 from app.handoffs import notifications, policy
+from app.handoffs.audit import HandoffAudit
 from app.handoffs.service import HandoffService
 from app.usage.service import UsageError
 from app.users.routes import administrator
@@ -152,3 +153,32 @@ def set_policy(body: PolicyBody, actor=Depends(administrator), session: Session 
     except DepartmentError as e:
         session.rollback()
         raise HTTPException(e.status, e.code) from None
+
+
+def audit_service(actor=Depends(administrator), service=Depends(handoff_service)):  # the Admin check runs first
+    if actor.id != service.user_id:
+        raise HTTPException(503, "Conversation store identity mismatch")
+    return HandoffAudit(service.store, service.central)
+
+
+@admin_router.get("")
+def audit_list(status: Literal["new", "claimed", "closed"] | None = None, department_id: str | None = Query(None, max_length=36),
+               limit: int = Query(20, ge=1, le=100), after: UUID | None = None, audit=Depends(audit_service)):
+    return perform(lambda: audit.listing(department_id, status, limit, str(after) if after else None))
+
+
+@admin_router.get("/access-log")
+def audit_access_log(limit: int = Query(50, ge=1, le=100), after: str | None = Query(None, max_length=80),
+                     audit=Depends(audit_service)):
+    return perform(lambda: audit.access_log(limit, after))
+
+
+@admin_router.get("/{handoff_id}")
+def audit_get(handoff_id: UUID, audit=Depends(audit_service)):
+    return perform(lambda: audit.get(str(handoff_id)))
+
+
+@admin_router.get("/{handoff_id}/messages")
+def audit_messages(handoff_id: UUID, limit: int = Query(50, ge=1, le=100), after: int = Query(0, ge=0, le=2**31 - 1),
+                   audit=Depends(audit_service)):
+    return perform(lambda: audit.messages(str(handoff_id), limit, after))

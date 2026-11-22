@@ -1,7 +1,7 @@
 # Human handoff — contract (H0)
 
 Status: design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
-`app/handoffs` (H2); routes, permission codes and the Admin cap in H3; notification feed in H4. Audit access follows in H5. Legal remains `failed`; no real data; no front end in this scope.
+`app/handoffs` (H2); routes, permission codes and the Admin cap in H3; notification feed in H4; Admin audit read in H5. Legal remains `failed`; no real data; no front end in this scope.
 
 ## What it is
 
@@ -116,6 +116,17 @@ someone else's event happened after your last read receipt or your own last acti
 as having seen it). `POST /api/handoffs/{id}/read` inserts the receipt and clears it. Requesters are notified about
 all their own handoffs; handlers only about what they can act on: unclaimed requests of their departments and
 handoffs assigned to them. Email and Teams are out of scope.
+
+## Admin audit read (H5) — `app/handoffs/audit.py`
+
+`GET /api/admin/handoffs` (filters `department_id`, `status`, keyset `after`), `GET /api/admin/handoffs/{id}` (summary,
+status, last assignee and the full event history), `GET /api/admin/handoffs/{id}/messages` and
+`GET /api/admin/handoffs/access-log` (who read what, newest first). Two checks, both per request: the Admin role
+(`core_admin`) and the **global** `handoffs:audit` permission in Central; revoking it stops audit immediately. The C06
+connection runs in audit mode (`app.c06_audit`), where row-level security shows every handoff but allows inserting only
+access-log rows. Every list and every detail or message read writes a log row **in the same transaction before any data is
+returned**, so a read cannot happen unlogged. Admin is not a party: the content-writing service refuses it (`404`), and the
+audit view omits the employee's conversation id. Refused attempts (no permission, inactive user) read and log nothing.
 
 ## Out of scope here
 
