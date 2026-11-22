@@ -42,7 +42,7 @@ def provision_c06_store(admin):
         c.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
         c.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(login)))
         c.execute(sql.SQL("GRANT SELECT ON c06_store_identity,c06_store_version,c06_result_sources TO {}").format(sql.Identifier(login)))
-        c.execute(sql.SQL("GRANT SELECT,INSERT ON c06_results,c06_conversations,c06_turns,c06_question_intents TO {}").format(sql.Identifier(login)))
+        c.execute(sql.SQL("GRANT SELECT,INSERT ON c06_results,c06_conversations,c06_turns,c06_question_intents,c06_handoffs,c06_handoff_events,c06_handoff_messages,c06_handoff_reads,c06_handoff_access_log TO {}").format(sql.Identifier(login)))
     runtime = create_engine(url.set(database=name, username=login, password=password), hide_parameters=True)
     return runtime, name, owner
 
