@@ -1,7 +1,7 @@
 # Human handoff — contract (H0)
 
 Status: design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
-`app/handoffs` (H2); routes, permission codes and the Admin cap in H3. Notifications and audit access follow in H4–H5. Legal remains `failed`; no real data; no front end in this scope.
+`app/handoffs` (H2); routes, permission codes and the Admin cap in H3; notification feed in H4. Audit access follows in H5. Legal remains `failed`; no real data; no front end in this scope.
 
 ## What it is
 
@@ -103,12 +103,19 @@ catalog and `seed.py`; `handoffs:audit` is seeded for Admin and used from H5. Ex
 rows added by seed or an admin step before roles can be mapped, as with every other code. Responses under
 `/api/handoffs` and `/api/admin` carry `Cache-Control: no-store`.
 
-## Notification feed (H4)
+## Notification feed (H4) — `app/handoffs/notifications.py`
 
-`GET /notifications` lists, per handoff with something new: event type (reply, claimed, transferred, closed, new
-request), time of the last event and the unread count, with no message text; a total unread counter for the bell;
-marking a handoff read inserts a receipt. Nothing extra is stored: the feed is derived from messages and receipts.
-Email and Teams are out of scope.
+`GET /api/notifications?limit=&after=` returns `{unread_handoffs, items, next_cursor}`; `GET /api/notifications/count`
+returns only `{unread_handoffs}` for the bell (poll it; SSE can sit on the same data later). Each item is one handoff
+with something new: `kind` (`reply`, `new_request`, `claimed`, `transferred`, `closed`, `reopened`), `activity_at`,
+`unread_messages`, `role` and `department_id`. There is **no message text**. Newest activity first; the cursor is
+`<timestamp>|<handoff id>` and must be passed back as given.
+
+Nothing extra is stored. A handoff is new for you when someone else wrote a message after your read position, or
+someone else's event happened after your last read receipt or your own last action on it (acting on a handoff counts
+as having seen it). `POST /api/handoffs/{id}/read` inserts the receipt and clears it. Requesters are notified about
+all their own handoffs; handlers only about what they can act on: unclaimed requests of their departments and
+handoffs assigned to them. Email and Teams are out of scope.
 
 ## Out of scope here
 

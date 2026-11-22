@@ -9,12 +9,13 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_central_session, get_current_user
 from app.conversation_store.authorization import ConversationResultStoreFactory
 from app.departments.service import DepartmentError
-from app.handoffs import policy
+from app.handoffs import notifications, policy
 from app.handoffs.service import HandoffService
 from app.usage.service import UsageError
 from app.users.routes import administrator
 
 router = APIRouter(prefix="/api/handoffs", tags=["human handoff"])
+notifications_router = APIRouter(prefix="/api/notifications", tags=["human handoff notifications"])
 admin_router = APIRouter(prefix="/api/admin/handoffs", tags=["human handoff administration"])
 
 
@@ -125,6 +126,16 @@ def close(handoff_id: UUID, service=Depends(handoff_service)):
 @router.post("/{handoff_id}/reopen")
 def reopen(handoff_id: UUID, service=Depends(handoff_service)):
     return perform(lambda: service.reopen(str(handoff_id)))
+
+
+@notifications_router.get("")
+def feed(limit: int = Query(20, ge=1, le=100), after: str | None = Query(None, max_length=80), service=Depends(handoff_service)):
+    return perform(lambda: notifications.feed(service, limit, after))
+
+
+@notifications_router.get("/count")
+def unread(service=Depends(handoff_service)):
+    return perform(lambda: notifications.unread_count(service))
 
 
 @admin_router.get("/policy")
