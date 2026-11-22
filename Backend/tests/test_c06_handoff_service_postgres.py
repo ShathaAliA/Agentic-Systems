@@ -304,3 +304,60 @@ def test_listing_pages_in_order_and_rejects_foreign_cursors(world):
     refused(lambda: w.svc(w.outsider).list_inbox(after=made[0]), 404, "handoff_not_found")
     refused(lambda: inbox.list_inbox(limit=0), 422, "invalid_page_limit")
     assert w.svc(w.emp).list_mine(limit=3)["next_cursor"] is None
+
+
+def feed(w, user, **kw):
+    from app.handoffs import notifications
+    return notifications.feed(w.svc(user), **kw)
+
+
+def count(w, user):
+    from app.handoffs import notifications
+    return notifications.unread_count(w.svc(user))["unread_handoffs"]
+
+
+def test_notification_feed_follows_the_whole_lifecycle(world):
+    w = world
+    created, _ = make(w)
+    identity = created["handoff_id"]
+    summary = lambda user: [(i["kind"], i["unread_messages"], i["role"]) for i in feed(w, user)["items"]]
+    assert summary(w.emp) == [] and count(w, w.emp) == 0  # your own request is not news to you
+    assert summary(w.head) == [("new_request", 0, "staff")] == summary(w.deputy)
+    for stranger in (w.outsider, w.admin, w.emp2):
+        assert summary(stranger) == [] and count(w, stranger) == 0
+    w.svc(w.head).post_message(identity, "تفضل")  # replying claims first
+    assert summary(w.head) == [] and summary(w.deputy) == []  # the claimer's own act, and not theirs to handle
+    assert summary(w.emp) == [("reply", 1, "requester")] and count(w, w.emp) == 1
+    assert set(feed(w, w.emp)["items"][0]) == {"handoff_id", "department_id", "kind", "activity_at", "unread_messages", "role"}
+    w.svc(w.emp).mark_read(identity)
+    assert summary(w.emp) == [] and count(w, w.emp) == 0
+    w.svc(w.emp).post_message(identity, "شكراً، سؤال آخر")
+    assert summary(w.head) == [("reply", 1, "staff")]
+    w.svc(w.head).mark_read(identity)
+    assert summary(w.head) == []
+    w.svc(w.head).transfer(identity, w.deputy)
+    assert summary(w.deputy) == [("transferred", 2, "staff")] and summary(w.emp) == [("transferred", 0, "requester")]
+    assert summary(w.head) == []
+    w.svc(w.deputy).close(identity)
+    assert summary(w.emp) == [("closed", 0, "requester")] and summary(w.deputy) == [] == summary(w.head)
+    w.svc(w.emp).mark_read(identity)
+    assert count(w, w.emp) == 0
+    w.svc(w.head).reopen(identity)
+    assert summary(w.emp) == [("reopened", 0, "requester")] and summary(w.deputy) == [("reopened", 2, "staff")]
+
+
+def test_notification_feed_pages_newest_first_and_validates_cursor(world):
+    w = world
+    ids = []
+    for _ in range(3):
+        made, _ = make(w)
+        w.svc(w.head).post_message(made["handoff_id"], "رد")
+        ids.append(made["handoff_id"])
+    page = feed(w, w.emp, limit=2)
+    assert page["unread_handoffs"] == 3 and [i["handoff_id"] for i in page["items"]] == ids[::-1][:2]
+    rest = feed(w, w.emp, limit=2, after=page["next_cursor"])
+    assert [i["handoff_id"] for i in rest["items"]] == ids[:1] and rest["next_cursor"] is None
+    for bad in ("x", "2026-01-01T00:00:00+00:00|nope", "|" + str(uuid4()), None.__class__.__name__):
+        refused(lambda: feed(w, w.emp, after=bad), 422, "invalid_cursor")
+    refused(lambda: feed(w, w.emp, limit=0), 422, "invalid_page_limit")
+    refused(lambda: feed(w, w.ghost), 403, "handoff_actor_inactive")

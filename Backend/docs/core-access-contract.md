@@ -62,6 +62,8 @@ Tests do not add a runtime universal authorization bypass or trust a role header
 | POST | `/api/handoffs/{handoff_id}/transfer` | self |
 | POST | `/api/handoffs/{handoff_id}/close` | self |
 | POST | `/api/handoffs/{handoff_id}/reopen` | self |
+| GET | `/api/notifications` | self |
+| GET | `/api/notifications/count` | self |
 | GET | `/api/admin/handoffs/policy` | core_admin |
 | PUT | `/api/admin/handoffs/policy` | core_admin |
 | GET | `/health/db` | core_admin |

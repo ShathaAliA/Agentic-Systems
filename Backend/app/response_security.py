@@ -6,7 +6,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
-SENSITIVE_ROOTS = ("/auth", "/admin", "/me", "/departments", "/api/documents", "/api/conversations", "/api/handoffs", "/api/admin", "/health/db")
+SENSITIVE_ROOTS = ("/auth", "/admin", "/me", "/departments", "/api/documents", "/api/conversations", "/api/handoffs", "/api/notifications", "/api/admin", "/health/db")
 
 
 def sensitive_path(scope: Scope) -> bool:
