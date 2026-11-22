@@ -19,7 +19,7 @@ def test_store_migration_graph_is_separate_and_cannot_resolve_credentials():
     backend = Path(__file__).resolve().parents[1]
     with patch("sqlalchemy.create_engine", side_effect=AssertionError("No engine allowed")):
         scripts = ScriptDirectory(str(backend / "result_store_alembic"))
-        assert scripts.get_heads() == ["c06_0004"] and scripts.get_bases() == ["c06_0001"]
+        assert scripts.get_heads() == ["c06_0005"] and scripts.get_bases() == ["c06_0001"]
         with pytest.raises(RuntimeError, match="Explicit isolated store migration connection required"):
             command.upgrade(Config(str(backend / "result_store_alembic.ini")), "head")
 

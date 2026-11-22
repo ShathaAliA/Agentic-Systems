@@ -20,7 +20,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(
     os.getenv("RUN_AUTH_POSTGRES_TESTS") != "1" or not Path(DRILL_FILE).is_file(),
     reason="Only the guarded Docker restore drill supplies a restored database")]
 
-TABLES = ("c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents")
+TABLES = ("c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents",
+          "c06_handoffs", "c06_handoff_events", "c06_handoff_messages", "c06_handoff_reads", "c06_handoff_access_log")
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +64,7 @@ def test_restored_rows_match_the_source_exactly_and_are_not_empty(drill):
 def test_restored_schema_identity_and_security_flags_are_preserved(drill):
     _, admin, _, name = drill
     with admin.connect() as c:
-        assert c.scalar(text("SELECT version_num FROM public.c06_store_version")) == "c06_0004"
+        assert c.scalar(text("SELECT version_num FROM public.c06_store_version")) == "c06_0005"
         assert c.execute(text("SELECT current_database(), kind, version FROM public.c06_store_identity")).one() == (name, "conversation_results", 1)
         flags = c.execute(text("""SELECT relname, relrowsecurity AND relforcerowsecurity FROM pg_class
             WHERE relname = ANY(:t) AND relkind='r'"""), {"t": list(TABLES)}).all()

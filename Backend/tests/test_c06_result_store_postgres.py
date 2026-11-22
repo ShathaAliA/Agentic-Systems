@@ -93,7 +93,7 @@ def engines():
             c.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
             c.execute("GRANT USAGE ON SCHEMA public TO c06_test_api")
             c.execute("GRANT SELECT ON c06_store_identity,c06_store_version,c06_result_sources TO c06_test_api")
-            c.execute("GRANT SELECT,INSERT ON c06_results,c06_conversations,c06_turns,c06_question_intents TO c06_test_api")
+            c.execute("GRANT SELECT,INSERT ON c06_results,c06_conversations,c06_turns,c06_question_intents,c06_handoffs,c06_handoff_events,c06_handoff_messages,c06_handoff_reads,c06_handoff_access_log TO c06_test_api")
         runtime = create_engine(url.set(username="c06_test_api", password=password), hide_parameters=True)
         with admin.connect() as c:
             after = c.execute(text("SELECT datname,pg_get_userbyid(datdba),datacl::text FROM pg_database ORDER BY datname")).all()
@@ -121,9 +121,11 @@ def record(user="employee", outcome="answered"):
 def test_store_migrations_and_no_central_schema(engines):
     admin, _ = engines
     with admin.connect() as c:
-        assert c.scalar(text("SELECT version_num FROM c06_store_version")) == "c06_0004"
+        assert c.scalar(text("SELECT version_num FROM c06_store_version")) == "c06_0005"
         tables = set(c.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public'")))
-        assert tables == {"c06_store_version", "c06_store_identity", "c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents"}
+        assert tables == {"c06_store_version", "c06_store_identity", "c06_results", "c06_result_sources", "c06_conversations", "c06_turns", "c06_question_intents",
+                          "c06_handoffs", "c06_handoff_events", "c06_handoff_messages", "c06_handoff_reads",
+                          "c06_handoff_access_log"}
 
 
 def test_reopen_sources_and_revocation(engines):
