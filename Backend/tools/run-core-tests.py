@@ -10,7 +10,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract", "c06_result_store", "document_repairs", "document_results")
+GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract", "c06_result_store", "c06_conversations", "c06_sealing", "c06_authorization", "c06_lifecycle", "c06_security", "c06_recovery", "c06_handoff_schema", "document_repairs", "document_results", "joint_ask")
 ENVIRONMENT_POLICY = json.loads((Path(__file__).with_name("test-environment-policy.json")).read_text(encoding="utf-8"))
 
 
@@ -108,6 +108,8 @@ def run(args):
                 command += ["-Python", sys.executable, "-PostgresBin", args.postgres_bin]
             else:
                 command += ["-Docker", args.docker, "-Image", args.image]
+                if group == "c06_recovery":
+                    command.append("-RestoreDrill")  # restore verification rides on this group
             jobs.append((group, command, None, True))
     for name, command, xml, isolated in jobs:
         print(f"Starting {name} ({args.backend if isolated else 'in-memory'})", flush=True)

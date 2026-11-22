@@ -13,6 +13,8 @@ from app.conversation_store.schema import Answer
 from app.usage.external_results import StoredQuestionResult
 from app.usage.service import UsageError
 
+DEPARTMENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,35}")  # no commas: the list is comma-joined
+
 
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -52,7 +54,14 @@ class PostgresResultStore:
         self.authorize = source_authorizer
 
     @contextmanager
-    def connection(self):
+    def connection(self, *, staff_departments=(), audit=False):
+        """A guarded transaction bound to this store's user.
+
+        staff_departments / audit are handoff row-level-security context and must come from a fresh Central
+        permission check by trusted code, never from a request. They are set per transaction (never pooled)."""
+        if (type(audit) is not bool or not all(type(d) is str and DEPARTMENT_ID.fullmatch(d) for d in staff_departments)):
+            raise UsageError(422, "invalid_handoff_context")
+        staff = ",".join(sorted(set(staff_departments)))
         try:
             with self.engine.begin() as conn:
                 # Guard every checkout, including pools populated before construction.
@@ -71,11 +80,44 @@ class PostgresResultStore:
                 identity = conn.execute(text("SELECT current_database(), kind, version FROM public.c06_store_identity")).all()
                 if identity != [(self.database, "conversation_results", 1)]:
                     raise UsageError(503, "result_store_identity_invalid")
+                sealed = conn.execute(text("""
+                    SELECT (SELECT version_num FROM public.c06_store_version)='c06_0005'
+                      AND NOT has_any_column_privilege(current_user,'public.c06_result_sources','INSERT')
+                      AND NOT has_schema_privilege(current_user,'public','CREATE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class t
+                        JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace
+                        WHERE n.nspname='public' AND t.relname IN
+                          ('c06_results','c06_result_sources','c06_conversations','c06_turns',
+                           'c06_question_intents','c06_handoffs','c06_handoff_events','c06_handoff_messages',
+                           'c06_handoff_reads','c06_handoff_access_log')
+                        AND pg_has_role(current_user,t.relowner,'MEMBER'))
+                      AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+                        JOIN pg_catalog.pg_roles owner ON owner.oid=p.proowner
+                        WHERE n.nspname='public' AND p.proname='c06_derive_result_sources'
+                          AND p.pronargs=0 AND p.prosecdef
+                          AND p.proconfig @> ARRAY['search_path=pg_catalog','row_security=on']
+                          AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles inherited
+                            WHERE pg_has_role(owner.oid,inherited.oid,'MEMBER') AND
+                            (inherited.rolsuper OR inherited.rolcreatedb OR inherited.rolcreaterole
+                             OR inherited.rolreplication OR inherited.rolbypassrls
+                             OR left(inherited.rolname,3)='pg_')))
+                      AND NOT has_function_privilege(current_user,'public.c06_derive_result_sources()','EXECUTE')
+                """)).scalar_one()
+                if sealed is not True:
+                    raise UsageError(503, "result_store_sealing_configuration_invalid")
                 conn.execute(text("SELECT set_config('app.c06_user_id', :user, true)"), {"user": self.user_id})
+                conn.execute(text("SELECT set_config('app.c06_staff_departments', :staff, true), "
+                                  "set_config('app.c06_audit', :audit, true)"),
+                             {"staff": staff, "audit": "on" if audit else ""})
                 yield conn
         except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
+            state = getattr(exc.orig, "sqlstate", None)
+            if state == "23505":
                 raise UsageError(409, "immutable_result_conflict") from None
+            if state == "23514" and "C06 handoff" in str(exc.orig):
+                # Database-enforced handoff rules: invalid transition, closed thread, wrong assignee.
+                raise UsageError(409, "handoff_rule_violation") from None
             raise UsageError(503, "result_store_unavailable") from None
         except SQLAlchemyError:
             raise UsageError(503, "result_store_unavailable") from None
@@ -91,10 +133,8 @@ class PostgresResultStore:
                 VALUES (:request,:owner,:fingerprint,:outcome,1,CAST(:payload AS jsonb),:hash)"""),
                 dict(request=result.request_id, owner=result.user_id, fingerprint=result.fingerprint,
                      outcome=result.outcome, payload=encoded, hash=sha256(encoded.encode()).hexdigest()))
-            for ordinal, source in enumerate(payload["sources"]):
-                conn.execute(text("""INSERT INTO public.c06_result_sources(request_id,owner_id,ordinal,source)
-                    VALUES (:request,:owner,:ordinal,CAST(:source AS jsonb))"""),
-                    dict(request=result.request_id, owner=result.user_id, ordinal=ordinal, source=canonical(source)))
+            # c06_0003 derives all source rows in the same DB transaction.
+            # Runtime intentionally has no direct INSERT privilege on that table.
 
     def load_authorized(self, user_id: str, request_id: str) -> StoredQuestionResult | None:
         if user_id != self.user_id:
@@ -119,7 +159,15 @@ class PostgresResultStore:
                 or sha256(canonical(payload).encode()).hexdigest() != row["payload_hash"]):
             raise UsageError(503, "question_result_integrity_error")
         # The callback only sees a copy: a callback cannot rewrite the delivered record.
-        decision = self.authorize(user_id, json.loads(canonical(payload)))
+        try:
+            decision = self.authorize(user_id, json.loads(canonical(payload)))
+        except UsageError as exc:
+            if exc.status == 403:
+                raise UsageError(403, "question_source_access_revoked") from None
+            raise UsageError(503, "source_authorizer_unavailable") from None
+        except Exception:
+            # Provider errors can contain tenant SQL, credentials or source text.
+            raise UsageError(503, "source_authorizer_unavailable") from None
         if decision is not True:
             raise UsageError(403, "question_source_access_revoked")
         return record

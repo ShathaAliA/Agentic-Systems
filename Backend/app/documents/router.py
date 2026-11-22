@@ -14,7 +14,11 @@ from app.usage.processor import ConfirmedTechnicalFailure
 from app.usage.service import UsageError
 from app.documents import provider_accounting
 from app.documents.commands import Publish, Revision, VersionCommand, Question, Metadata, AudienceChange
-from app.usage.external_results import PreparedQuestionResult, execute_with_result_store
+from uuid import UUID
+from app.documents import guardrails
+from app.usage.external_results import PreparedQuestionResult
+from app.conversation_store.conversations import ConversationService
+from app.conversation_store.lifecycle import QuestionLifecycleService
 from app.conversation_store.postgres import PostgresResultStore
 from app.conversation_store.schema import Answer
 
@@ -382,6 +386,12 @@ async def revise_document(
         raise HTTPException(status_code=500, detail="حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.")
 
 
+def _question_lifecycle(store, central_engine, settings):
+    """Seam for tests: Core's lifecycle bound to the already authorized store."""
+    return QuestionLifecycleService(ConversationService(store, central_engine), central_engine,
+                                    quote_provider=lambda _command: settings.envelope)
+
+
 # ------------------------------------------------------------------
 # Ask (with U1 + persisted result)
 # ------------------------------------------------------------------
@@ -395,8 +405,8 @@ def ask_question(
     department_id, query = body.department_id, body.question
     if not has_permission(central_db, current_user.id, "documents:read", department_id):
         raise HTTPException(403, "Permission denied")
-    # Gate 4 must inject trusted conversation ownership/scope validation plus a
-    # restricted Core store. No environment fallback and no tenant dual-write.
+    # One C06 result authority: the injected factory binds owner, conversation and department
+    # and installs the source authorizer. No environment fallback and no tenant dual-write.
     factory = request.app.state.document_result_store_factory
     if factory is None:
         raise HTTPException(503, "document_result_integration_unavailable")
@@ -406,16 +416,14 @@ def ask_question(
                 or store.authorize is None):
             raise UsageError(503, "document_result_integration_unavailable")
         settings = provider_accounting.Settings.from_environment()
-        command = QuestionCommand(request_key=body.request_key, question=query,
-            department_ids=(department_id,),
-            context_revision=body.conversation_id)
         central_engine = request.app.state.central_engine or central_db.get_bind()
+        conversation_id = str(UUID(body.conversation_id))
 
         def context_for_user():
             with Session(central_engine) as session:
                 return get_user_context(session, current_user.id, department_id)
 
-        def process(ctx):
+        def process(ctx, command):
             departments, roles = context_for_user()
             with _open_department_session(current_user.id, department_id, "documents:read") as db:
                 chunks = rag_service.retrieve_relevant_chunks(db, query, department_id,
@@ -425,18 +433,24 @@ def ask_question(
                 from app.documents.source_authorization import source_for_chunk
                 sources = [source_for_chunk(db, department_id, c) for c in allowed]
                 payload = dict(question_request_id=ctx.request_id,
-                    conversation_id=body.conversation_id, status="no_answer",
+                    conversation_id=conversation_id, status="no_answer",
                     answer="لم يتم العثور على معلومات مسموح لك بالوصول إليها.",
                     answer_kind="system_notice", llm_called=False, sources=[],
                     unanswered_departments=[], handoff_available=True)
                 if sources:
                     context = "\n\n".join(c["quote"] for c in sources)
-                    if len(provider_accounting.prompt_for(query, context).encode("utf-8")) + 512 > settings.input_limit:
+                    if guardrails.prompt_size(query, context) + 512 > settings.input_limit:
                         raise ConfirmedTechnicalFailure()
                     def call(attempt_id):
                         answer, receipt = provider_accounting.generate(settings, query, context, attempt_id)
-                        payload.update(status="answered", answer=answer, answer_kind="generated",
-                            llm_called=True, sources=sources)
+                        if guardrails.is_blocked(answer):
+                            # Leaked instructions or unusable output: refuse, cite nothing, offer handoff. The
+                            # attempt is already settled and counts as one question, never a silent refund.
+                            payload.update(status="no_answer", answer=guardrails.BLOCKED_NOTICE,
+                                answer_kind="system_notice", llm_called=True, sources=[])
+                        else:
+                            payload.update(status="answered", answer=answer, answer_kind="generated",
+                                llm_called=True, sources=sources)
                         return receipt
                     ctx.perform("generation", "openai", settings.model, settings.envelope, call)
                 validated = Answer.model_validate(payload).model_dump(mode="json")
@@ -449,12 +463,12 @@ def ask_question(
             with Session(central_engine) as session:
                 return has_permission(session, user_id, "documents:read", department_id)
 
-        result = execute_with_result_store(central_engine, authenticated_user_id=current_user.id,
-            command=command, estimated_micro_usd=settings.envelope,
-            authorize_content=authorize_content, process=process, store=store)
-        if result.response is not None:
-            return result.response
-        if result.receipt.state == "refunded":
+        result = _question_lifecycle(store, central_engine, settings).ask(
+            conversation_id, body.request_key, query,
+            authorize_content=authorize_content, process=process)
+        if result["response"] is not None:
+            return result["response"]
+        if result["status"] == "refunded":
             raise HTTPException(503, "question_technical_failure_refunded")
         raise HTTPException(409, "question_processing_or_uncertain")
     except UsageError as error:
@@ -619,7 +633,9 @@ async def review_document(
         if doc is None:
             raise HTTPException(404, "document_not_found")
         return dict(document_id=doc.id, version=doc.version, status=doc.status,
-                    extracted_text=doc.extracted_text or "")
+                    extracted_text=doc.extracted_text or "",
+                    # Codes and counts only, never the matched text: hidden characters, instruction-like text
+                    content_warnings=guardrails.detect_injection_markers(doc.extracted_text))
 
 
 @router.get("/{document_id}")

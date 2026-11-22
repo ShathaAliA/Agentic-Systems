@@ -21,6 +21,8 @@ from app.documents import router, provider_accounting as billing
 from app.usage.models import UsageRequest
 from app.usage.processor import ProviderReceipt, ConfirmedTechnicalFailure
 from app.usage.service import UsageError
+from app.usage.question_adapter import QuestionCommand
+from app.usage.external_results import execute_with_result_store
 from test_usage import usage, configure
 
 
@@ -119,6 +121,26 @@ def question_http(usage, monkeypatch):
             if record and self.authorize(user_id, record.payload) is not True:
                 raise UsageError(403, "question_source_access_revoked")
             return record
+    class RouteLevelLifecycle:
+        """Offline stand-in for QuestionLifecycleService: Core's real lifecycle needs a PostgreSQL C06
+        store and is exercised in test_joint_ask_postgres.py. Here only the route behaviour is checked."""
+        def __init__(self, store, central_engine, settings):
+            self.store, self.central, self.settings = store, central_engine, settings
+
+        def ask(self, conversation_id, request_key, question, *, authorize_content, process):
+            command = QuestionCommand(request_key=request_key, question=question,
+                department_ids=(DEPT,), context_revision=conversation_id)
+            result = execute_with_result_store(self.central, authenticated_user_id=self.store.user_id,
+                command=command, estimated_micro_usd=self.settings.envelope,
+                authorize_content=authorize_content, process=lambda ctx: process(ctx, command), store=self.store)
+            status = {"running": "processing", "reserved": "processing"}.get(result.receipt.state, result.receipt.state)
+            if result.response is not None:
+                return dict(status=result.receipt.outcome, request_id=result.receipt.request_id,
+                            replayed=result.receipt.replayed, turn=None, response=result.response)
+            return dict(status=status, request_id=result.receipt.request_id, replayed=result.receipt.replayed,
+                        turn=None, response=None)
+    monkeypatch.setattr(router, "_question_lifecycle",
+        lambda store, central_engine, settings: RouteLevelLifecycle(store, central_engine, settings))
     app = create_app(central_engine=central, document_result_store_factory=SyntheticStore, auth_settings=AuthSettings(mode="development_password", app_env="test"))
     with TestClient(app) as client:
         yield client, central, tenant, headers, provider, records

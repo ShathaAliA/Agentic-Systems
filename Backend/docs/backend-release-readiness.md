@@ -25,7 +25,7 @@ embedding quality, generated-answer accuracy or production operational readiness
 
 | Item | Owner / required acceptance |
 | --- | --- |
-| Trusted conversation/result binding | Core Gate 4: validate owner/scope, independent immutable result store, mandatory source authorization; /ask remains disabled until then |
+| Trusted conversation/result binding | Wired and tested synthetically: `/ask` runs through Core's `QuestionLifecycleService` with one C06 result authority and Documents' source authorizer (see c06-documents-integration.md). Still disabled unless `C06_RESULT_STORE_URL_FILE` is configured; real tenant PostgreSQL + C06 joint run, Entra and company data remain separate gates |
 | Physical source provenance | Documents: immutable versioned page/slide/sheet-cell metadata; do not invent locations from fallback page 1 |
 | Legacy Central content | Joint operator review: retain existing rows until an explicit backup, retention and transfer decision; no purge or history rewrite |
 | Runtime image / hosted CI | Verify actual production Dockerfile and exact-head jobs; a lightweight local contract-test image is insufficient proof |

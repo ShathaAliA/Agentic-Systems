@@ -1,7 +1,7 @@
 # C06 implementation log — Gate 1 (2026-11-15)
 
-**Status:** Gate 1 verified by hosted CI. Gate 2 explicitly approved and now
-implemented locally as an isolated PostgreSQL adapter; no public delivery or Gate 3.
+**Status:** Gates 1/2 verified; Gate 3 explicitly approved and implemented locally
+as owner-only conversations/history. No question dispatch or real source integration.
 **Baseline:** C05 closed at `4cba7564` with 376 selected unit tests and
 64 isolated PostgreSQL tests passing; C06 design recorded at `ad6bc41`.
 
@@ -112,3 +112,102 @@ compromised application credential; checksum is not a privileged-tamper signatur
 Legal's live state was not queried/changed and must remain failed. HR/Finance,
 documents-ai and the original development Central database were untouched.
 No push, merge or Gate 3 work. Prepare local reviewable commits only.
+
+## Gate 3 — local completion (2026-11-16)
+
+Approved owner-only conversation metadata and immutable completed-question turns.
+Added independent c06_0002; historical c06_0001/Central/tenant revisions unchanged.
+Four authenticated routes bring the explicit Core inventory to 48 operations.
+No public message submission/edit/delete, Admin cross-user bypass or automatic
+provider/question execution is registered. Store factory is explicit and defaults
+to unavailable. Text delivery requires current owner/scope/U1/source validation;
+revoked/unavailable content is masked without changing stored history.
+
+| Actual local check | Final result |
+|---|---|
+| Full sanitized Core unit runner | 409 passed, zero failures/errors/skips |
+| New native PostgreSQL Gate 3 group | 13 passed, zero failures/errors/skips |
+| Gate 2 PostgreSQL regression after additive migration | 16 passed, zero failures/errors/skips |
+| Upgrade c06_0001 with a synthetic prior result, then head twice | Prior row unchanged; c06_0002 installed |
+| Owner/Admin isolation, concurrent links/sequences, pagination, link rollback, uncertainty and history masking | Passed in the new group |
+
+One repeated run exposed concurrent use of the single-connection in-memory
+SQLite Central stub. The test now clones only synthetic fixture data to a
+throwaway SQLite file with separate connections. The final PostgreSQL run passed
+including three repeated rounds of concurrent linking; no production permission
+check was weakened. This was a fixture correction, not a bypass of inactive users.
+
+New clusters were backed up before migrations/grants, stopped and retained.
+The final Gate 3 recovery directory is ignored private state at
+`.local/native-auth-tests/d304a9c903ab4d54981a4aab5ac02854/`; the Gate 2 regression
+used another new cluster. Never commit/share their generated credentials/dumps.
+No existing HR, Finance, Legal, Central database or container was accessed.
+Legal's live status was not queried/changed; failed remains the requirement.
+
+See [Gate 3 contract, commands and limits](c06-gate3-verification.md). No Docker,
+hosted CI, real source adapter, RAG/LLM, full restore or encryption deployment is
+claimed in this batch. Gate 4, public question intake and audited global Admin
+history access remain future work. No push/merge; reviewable local commits only.
+
+
+## 2026-11-17 — Gate 4.1 local sealing checkpoint
+
+Approved scope implemented on feature/core-backend only: additive c06_0003,
+DB-derived source rows, parent-only adapter writes, limited definer identity and
+fail-closed runtime configuration. Historical c06_0001/0002 and all existing
+Central/tenant migration files remain unchanged. Legacy txid collision reproduced
+on a fresh PG18.6 cluster; new seal and focused full-restore tests passed.
+
+Actual local verification: 410 offline unit tests; 8 new PostgreSQL seal tests;
+16 Gate 2 and 13 Gate 3 PostgreSQL regressions. All final suites had zero failures,
+errors or skips. Clusters were pre-backed-up, confirmed stopped and retained.
+No docs-ai edit, live HR/Finance/Legal/Central access, provider, push or merge.
+No Gate 4.2 work. See c06-gate4-1-sealing.md for grants, limitations and evidence.
+
+## 2026-11-17 — Gate 4.2 local source-binding checkpoint
+
+Implemented Core-owned SourceAuthorizerProvider, immutable conversation binding and
+the single-department three-argument ConversationResultStoreFactory shim. The
+one-argument metadata factory remains unchanged. HTTP history resolves source
+authorization per result from stored conversation scope. Missing providers disable
+content; explicit approval requires literal True. Provider errors are sanitized,
+payloads copied and current Core access rechecked after provider IO. Existing
+per-message masking prevents one provider failure from breaking the history page.
+
+Final offline suite: 423 passed. Fresh PostgreSQL 18.6: 24 binding + 16 storage +
+13 history/concurrency + 8 sealing/restore = 61 distinct cases passed, zero skips.
+No documents-ai edit, migration change, tenant provider implementation, LLM call,
+live HR/Finance/Legal/Central access, push or merge. Legal was not queried/activated.
+Actual tenant authorization and U1 lifecycle remain pending. See
+c06-gate4-2-authorization.md for the contract, evidence and timeout/race limitations.
+
+## 2026-11-19 — Gate 4.3 local question-lifecycle checkpoint
+
+Approved D1: additive c06_0004 (insert-only question intents) and an internal
+QuestionLifecycleService. Runtime now requires c06_0004. Verified on PostgreSQL 17.10
+via the Docker runner: 11 new lifecycle tests plus 16/13/24/7 regression tests passed
+(1 native-only restore drill skipped); offline 409 passed with one environmental
+failure. Native 18.6, c06_0003 upgrade path and hosted CI not run. No push or merge.
+See c06-gate4-3-verification.md.
+
+## 2026-11-19 — Gate 4.4 local isolation/security checkpoint
+
+20 new PostgreSQL cases covering lost access, revocation during processing, owner and
+Admin isolation, RLS, runtime privileges, hostile text, secret handling, scope integrity,
+input validation and quota. One finding fixed: malformed conversation ids now return 422
+instead of a masked 503. Docker runner, PostgreSQL 17.10: 20 + 11 passed. No push or merge.
+See c06-gate4-4-verification.md.
+
+## 2026-11-19 — Gate 4.5 local recovery/restore checkpoint
+
+Owner-scoped QuestionRecovery (report, idempotent re-link), a guarded Docker -RestoreDrill that
+restores the finished test store into a new database and verifies it, and a recovery runbook.
+Docker runner, PostgreSQL 17.10: 7 recovery + 5 restore-verification tests passed. Retention
+remains an open company decision. No push or merge. See c06-gate4-5-verification.md.
+
+## 2026-11-19 — Gate 4.6 local tooling/contract checkpoint
+
+New groups registered, Docker runner runs the restore drill, docker path resolution fixed,
+drill password moved to a private file, lifecycle integration contract written. Full Docker run:
+all groups passed (c06 lifecycle 11, security 20, recovery 7, restore verification 5); one
+environmental unit failure and one native-only skip. See c06-gate4-6-verification.md.

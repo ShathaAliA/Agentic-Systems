@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import os
 
+from app.documents import guardrails
 from app.usage.processor import ProviderReceipt, ConfirmedTechnicalFailure
 from app.usage.service import UsageError
 
@@ -93,22 +94,14 @@ class Settings:
         return "stateless-v1:" + sha256(repr(self).encode()).hexdigest()
 
 
-def prompt_for(query, context):
-    return (
-        "أجب بالعربية من المصادر فقط. لا تخمّن. اذكر التعارض دون ترجيح.\n"
-        f"المصادر:\n{context}\nالسؤال:\n{query}"
-    )
-
-
 def build_client(provider):
+    """OpenAI-compatible client per provider."""
     from openai import OpenAI
 
     if provider == "groq":
         api_key = os.getenv("GROQ_API_KEY")
-
         if not api_key:
             raise UsageError(503, "provider_credentials_missing")
-
         return OpenAI(
             base_url="https://api.groq.com/openai/v1",
             api_key=api_key,
@@ -117,39 +110,25 @@ def build_client(provider):
 
     if provider == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
-
         if not api_key:
             raise UsageError(503, "provider_credentials_missing")
-
-        return OpenAI(
-            api_key=api_key,
-            max_retries=0,
-        )
+        return OpenAI(api_key=api_key, max_retries=0)
 
     raise UsageError(503, "metered_provider_not_supported")
 
 
 def generate(settings, query, context, attempt_id, *, client=None):
-    prompt = prompt_for(query, context)
-
-    if len(prompt.encode("utf-8")) + 512 > settings.input_limit:
-        raise ConfirmedTechnicalFailure()
+    prompt = guardrails.build_prompt(query, context)
+    # UTF-8 byte count (system rules included) upper-bounds text BPE tokens; reserve message overhead too.
+    if prompt.size + 512 > settings.input_limit:
+        raise ConfirmedTechnicalFailure()  # demonstrably before provider dispatch
 
     if client is None:
         client = build_client(settings.provider)
 
     response = client.chat.completions.create(
         model=settings.model,
-        messages=[
-            {
-                "role": "system",
-                "content": "أنت مساعد مؤسسي دقيق. أجب فقط من السياق المرفق.",
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
+        messages=prompt.messages,
         max_completion_tokens=settings.output_limit,
         extra_headers={"Idempotency-Key": attempt_id},
     )
@@ -181,4 +160,6 @@ def generate(settings, query, context, attempt_id, *, client=None):
         output_tokens=usage.completion_tokens,
     )
 
-    return answer, receipt
+    # Leaks, markup and stray URLs never reach the user. The receipt is built first so the attempt's cost is
+    # settled even when the text is blocked (a blocked answer is a counted question, never a silent refund).
+    return guardrails.guard_output(answer, prompt), receipt

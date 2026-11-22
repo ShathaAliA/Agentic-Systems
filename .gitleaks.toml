@@ -1,0 +1,13 @@
+# Secret scanning configuration. Default rules stay on; allowlist entries are narrow (path AND value shape),
+# each explained, and were added only after reviewing a real finding. Never add a blanket path exclusion.
+title = "Agentic-Systems secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic request keys in the API contract examples (an idempotency label, not a credential)"
+condition = "AND"
+paths = ['''Backend/contracts/document-api-examples\.json''']
+regexTarget = "line"
+regexes = ['''"request_key"\s*:\s*"synthetic-[a-z0-9-]+"''']

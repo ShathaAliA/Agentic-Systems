@@ -4,8 +4,11 @@ param(
     [string]$Image = "ai-platform-core:test",
     [ValidateSet("postgres:17-alpine", "pgvector/pgvector:pg17")]
     [string]$PostgresImage = "postgres:17-alpine",
-    [ValidateSet("tests/test_e2e_documents.py", "tests/test_document_pipeline_postgres.py", "tests/test_upload_retrieval_simple.py", "tests/test_upload_rollback.py", "tests/test_document_repairs_postgres.py", "tests/test_documents_postgres.py", "tests/test_document_provisioning_postgres.py", "tests/test_document_results_postgres.py", "tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py")]
-    [string]$TestFile = "tests/test_authentication_postgres.py"
+    [ValidateSet("tests/test_e2e_documents.py", "tests/test_document_pipeline_postgres.py", "tests/test_upload_retrieval_simple.py", "tests/test_upload_rollback.py", "tests/test_document_repairs_postgres.py", "tests/test_documents_postgres.py", "tests/test_document_provisioning_postgres.py", "tests/test_document_results_postgres.py", "tests/test_c06_result_store_postgres.py", "tests/test_tenant_contract_postgres.py", "tests/test_database_isolation_postgres.py", "tests/test_core_lifecycle_postgres.py", "tests/test_authentication_postgres.py", "tests/test_departments_postgres.py", "tests/test_users_postgres.py", "tests/test_usage_postgres.py", "tests/test_role_policies_postgres.py", "tests/test_core_access_postgres.py", "tests/test_authentication_postgres.py", "tests/test_c06_authorization_postgres.py", "tests/test_c06_lifecycle_postgres.py", "tests/test_c06_security_postgres.py", "tests/test_c06_recovery_postgres.py", "tests/test_c06_handoff_schema_postgres.py", "tests/test_joint_ask_postgres.py", "tests/test_joint_ask_pgvector_postgres.py", "tests/test_c06_sealing_postgres.py", "tests/test_c06_conversations_postgres.py")]
+    [string]$TestFile = "tests/test_authentication_postgres.py",
+    # C06 only: dump the finished test database, restore it into a NEW database in the same
+    # throwaway cluster and verify the restored copy. No other database is read or changed.
+    [switch]$RestoreDrill
 )
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot 'test-isolation.ps1')
@@ -14,7 +17,7 @@ Assert-LocalTestDocker $Docker
 $testUser = Get-TestClientUser
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $backendRoot = Join-Path $repoRoot "Backend"
-$testDatabase = if ($TestFile -eq 'tests/test_c06_result_store_postgres.py') { 'c06_result_test' } else { 'auth_test_db' }
+$testDatabase = if ($TestFile -in @('tests/test_c06_authorization_postgres.py','tests/test_c06_lifecycle_postgres.py','tests/test_c06_security_postgres.py','tests/test_c06_recovery_postgres.py','tests/test_c06_handoff_schema_postgres.py','tests/test_joint_ask_postgres.py','tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
 $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "ai-auth-test-$suffix"
 $network = "ai-auth-network-$suffix"
@@ -75,17 +78,45 @@ try {
     Docker-Checked @("cp", "${container}:/tmp/auth-globals-before.sql", (Join-Path $state "auth-globals-before.sql"))
     # Verify archive readability; this is a fresh empty test database, not company data.
     Docker-Checked @("exec", $container, "pg_restore", "--list", "/tmp/auth-before.dump")
-    Docker-Checked @("run", "--rm", "--network", $network,
-        "--user", $testUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-        "--mount", "type=bind,source=$backendRoot,target=/repo/Backend,readonly",
-        "--mount", "type=bind,source=$(Join-Path $repoRoot 'pytest.ini'),target=/repo/pytest.ini,readonly",
-        "--mount", "type=bind,source=$(Join-Path $repoRoot 'conftest.py'),target=/repo/conftest.py,readonly",
-        "--workdir", "/repo/Backend",
-        "--mount", "type=bind,source=$state,target=/reports",
-        "-e", "APP_ENV=test", "-e", "AUTH_MODE=disabled", "-e", "PYTHON_DOTENV_DISABLED=1",
-        "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
-        "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", $Image,
-        "python", "-m", "pytest", "-q", $TestFile, "--isolated-postgres", "--junitxml=/reports/results.xml", "--tb=short", "-p", "no:cacheprovider")
+    $clientRuns = if ($RestoreDrill) { 2 } else { 1 }
+    for ($clientRun = 0; $clientRun -lt $clientRuns; $clientRun++) {
+        $clientFile = $TestFile; $clientReport = "results.xml"
+        if ($clientRun -eq 1) {
+            if ($testDatabase -ne 'c06_result_test') { throw 'The restore drill applies only to the C06 result store' }
+            $restored = "c06_restored_$suffix"
+            $runtimePassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+            $owner = "auth_test_owner"
+            Docker-Checked @("exec", $container, "pg_dump", "-U", $owner, "-d", $testDatabase, "-Fc", "-f", "/tmp/c06-restore.dump")
+            Docker-Checked @("exec", $container, "pg_restore", "--list", "/tmp/c06-restore.dump")
+            Docker-Checked @("cp", "${container}:/tmp/c06-restore.dump", (Join-Path $state "c06-restore.dump"))
+            Docker-Checked @("exec", $container, "createdb", "-U", $owner, $restored)
+            Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-c", "ALTER SCHEMA public OWNER TO c06_store_owner")
+            Docker-Checked @("exec", $container, "pg_restore", "-U", $owner, "-d", $restored, "--single-transaction", "--exit-on-error", "--no-owner", "--role=c06_store_owner", "/tmp/c06-restore.dump")
+            Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-c", "REVOKE ALL ON DATABASE $restored FROM PUBLIC", "-c", "GRANT CONNECT ON DATABASE $restored TO c06_test_api")
+            # The throwaway password goes through a private file (mounted into the database
+            # container), never a command argument.
+            [IO.File]::WriteAllText((Join-Path $state "restore-role.sql"), "ALTER ROLE c06_test_api PASSWORD '$runtimePassword';")
+            Docker-Checked @("exec", $container, "psql", "-U", $owner, "-d", $restored, "-v", "ON_ERROR_STOP=1", "-q", "-f", "/run/auth-test/restore-role.sql")
+            $source = (Get-Content -Raw (Join-Path $state "admin.json") | ConvertFrom-Json).url
+            $restoredUrl = $source -replace "/$testDatabase$", "/$restored"
+            $runtimeUrl = $restoredUrl -replace "auth_test_owner:[0-9a-f]+@", "c06_test_api:${runtimePassword}@"
+            @{source_admin=$source; restored_admin=$restoredUrl; restored_runtime=$runtimeUrl; restored_database=$restored} |
+                ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $state "restore-drill.json")
+            $runtimePassword = $null; $source = $null; $restoredUrl = $null; $runtimeUrl = $null
+            $clientFile = "tests/test_c06_restore_verify_postgres.py"; $clientReport = "restore-results.xml"
+        }
+        Docker-Checked @("run", "--rm", "--network", $network,
+            "--user", $testUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            "--mount", "type=bind,source=$backendRoot,target=/repo/Backend,readonly",
+            "--mount", "type=bind,source=$(Join-Path $repoRoot 'pytest.ini'),target=/repo/pytest.ini,readonly",
+            "--mount", "type=bind,source=$(Join-Path $repoRoot 'conftest.py'),target=/repo/conftest.py,readonly",
+            "--workdir", "/repo/Backend",
+            "--mount", "type=bind,source=$state,target=/reports",
+            "-e", "APP_ENV=test", "-e", "AUTH_MODE=disabled", "-e", "PYTHON_DOTENV_DISABLED=1",
+            "-e", "RUN_AUTH_POSTGRES_TESTS=1", "-e", "AUTH_TEST_BACKUP_ACK=1",
+            "-e", "AUTH_TEST_ADMIN_URL_FILE=/reports/admin.json", "-e", "AUTH_TEST_REPORT_DIR=/reports", $Image,
+            "python", "-m", "pytest", "-q", $clientFile, "--isolated-postgres", "--junitxml=/reports/$clientReport", "--tb=short", "-p", "no:cacheprovider")
+    }
 }
 finally {
     # Preserve the stopped test container and recovery artifacts. Never delete a database.
