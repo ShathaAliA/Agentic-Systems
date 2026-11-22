@@ -98,6 +98,35 @@ beyond a local development database.
 First audit result: `opentelemetry-api` 1.45.1 (CVE-2026-126360, DoS in traceparent parsing, fixed in 1.45.2) was bumped.
 The application does not import it. Not included: container image scanning (Trivy) and static analysis (bandit).
 
+## AI guardrails (PR-B)
+
+Threat model: instructions hidden in uploaded documents or OCR text (indirect injection), jailbreak and
+prompt-extraction in questions, forged prompt delimiters, invisible characters, and model output that leaks the
+instructions or carries markup and URLs. The model has no tools and takes no actions; retrieval is authorized
+before the prompt is built; citations come from retrieved chunks, never from model text. Guardrails lower the
+risk, they do not guarantee a model obeys.
+
+| Control | Behaviour | Where / test |
+| --- | --- | --- |
+| System policy | A separate system message: answer only from the sources, treat sources and question as data, ignore instructions inside them, refuse to reveal the rules, plain text only | `app/documents/guardrails.py`, `tests/test_prompt_guardrails.py` |
+| Data delimiters | Sources and question sit inside random per-request delimiters; forged delimiters in text are defused | same |
+| Input hygiene | NFKC normalization; invisible and direction-forcing characters removed (zero-width, bidi overrides, Unicode tag characters, controls). ZWNJ/ZWJ, LRM/RLM, the Arabic letter mark, diacritics and tatweel are kept. Applies only to what the model receives: stored text and cited quotes stay byte-exact | same |
+| Canary | A random secret in the system message; if it (or a 40-character piece of the rules) appears in the answer, the answer is blocked | same |
+| Output validation | HTML tags, markdown images and links are stripped; URLs not present in the sources become `[رابط محذوف]`; length capped to the stored schema limit | same |
+| Blocked output | Replaced by a `no_answer` notice with no sources and `handoff_available`; the attempt is already settled, so it counts as one question (never a silent refund) | route test |
+| Reviewer warnings | The review endpoint adds `content_warnings`: codes and counts for hidden characters, override/role/extraction phrases, delimiter tokens, script markup and long encoded blobs, in Arabic and English. Never the matched text. Warn only; nothing is blocked | `GET /api/documents/{id}/review` |
+
+The system policy adds input tokens; the size check (`input_limit`) counts it. Blocked events are logged as stable,
+content-free messages.
+
+Evaluating a real model (run by the owner, not part of CI): `Backend/tools/eval_injection.py` runs the production
+prompt builder and guardrails over `Backend/eval/injection_cases.json` (direct override, role play, prompt
+extraction, indirect and hidden-character injection, exfiltration, delimiter breaks, encodings, authority claims,
+cost abuse, multi-turn tricks, plus benign controls that measure over-refusal). By default it only prints a plan;
+`--yes-spend` calls the model with your `OPENAI_API_KEY` (never stored), with `--budget-usd` and prices to cap the
+spend. Outcomes: `pass`, `blocked` (guardrail caught a leak), `fail` (forbidden text reached the answer),
+`missed` (a control lost its expected content). The fake-model tests prove the scorer, not model robustness.
+
 ## Not covered here
 
 Production login (Microsoft Entra), secrets manager, TLS certificates and WAF, encryption at rest, front-end

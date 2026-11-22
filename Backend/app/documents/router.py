@@ -15,6 +15,7 @@ from app.usage.service import UsageError
 from app.documents import provider_accounting
 from app.documents.commands import Publish, Revision, VersionCommand, Question, Metadata, AudienceChange
 from uuid import UUID
+from app.documents import guardrails
 from app.usage.external_results import PreparedQuestionResult
 from app.conversation_store.conversations import ConversationService
 from app.conversation_store.lifecycle import QuestionLifecycleService
@@ -438,12 +439,18 @@ def ask_question(
                     unanswered_departments=[], handoff_available=True)
                 if sources:
                     context = "\n\n".join(c["quote"] for c in sources)
-                    if len(provider_accounting.prompt_for(query, context).encode("utf-8")) + 512 > settings.input_limit:
+                    if guardrails.prompt_size(query, context) + 512 > settings.input_limit:
                         raise ConfirmedTechnicalFailure()
                     def call(attempt_id):
                         answer, receipt = provider_accounting.generate(settings, query, context, attempt_id)
-                        payload.update(status="answered", answer=answer, answer_kind="generated",
-                            llm_called=True, sources=sources)
+                        if guardrails.is_blocked(answer):
+                            # Leaked instructions or unusable output: refuse, cite nothing, offer handoff. The
+                            # attempt is already settled and counts as one question, never a silent refund.
+                            payload.update(status="no_answer", answer=guardrails.BLOCKED_NOTICE,
+                                answer_kind="system_notice", llm_called=True, sources=[])
+                        else:
+                            payload.update(status="answered", answer=answer, answer_kind="generated",
+                                llm_called=True, sources=sources)
                         return receipt
                     ctx.perform("generation", "openai", settings.model, settings.envelope, call)
                 validated = Answer.model_validate(payload).model_dump(mode="json")
@@ -626,7 +633,9 @@ async def review_document(
         if doc is None:
             raise HTTPException(404, "document_not_found")
         return dict(document_id=doc.id, version=doc.version, status=doc.status,
-                    extracted_text=doc.extracted_text or "")
+                    extracted_text=doc.extracted_text or "",
+                    # Codes and counts only, never the matched text: hidden characters, instruction-like text
+                    content_warnings=guardrails.detect_injection_markers(doc.extracted_text))
 
 
 @router.get("/{document_id}")
