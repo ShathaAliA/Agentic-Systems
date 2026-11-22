@@ -190,6 +190,8 @@ destructive to that new state; do not run it blindly. It does not drop a databas
 alter tenant data. Restore into a separate recovery database and validate before any
 manual cutover. Day 1 provisioning tables/revisions are preserved.
 
+The Entra integration is scheduled after the front end; see [entra-deferral-decision.md](entra-deferral-decision.md).
+
 Future Entra support must use a separate validator with verified signature, issuer,
 audience, expiry and tenant policy, then map immutable issuer/subject to central
 users and explicit internal roles. It must never fall back to development passwords
