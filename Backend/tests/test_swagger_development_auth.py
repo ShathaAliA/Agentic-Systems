@@ -130,7 +130,8 @@ def test_form_identity_claims_do_not_select_a_user(auth):
 
 def test_disabled_form_login_does_not_connect_to_database():
     app = create_app(auth_settings=AuthSettings(mode="disabled", app_env="production"))
-    with TestClient(app) as client:
+    # Production accepts only loopback or the configured hosts, so the probe uses a loopback Host.
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         response = form_login(client, secrets.token_urlsafe(24))
         assert response.status_code == 503
         assert response.headers["cache-control"] == "no-store"

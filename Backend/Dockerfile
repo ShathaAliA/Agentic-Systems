@@ -20,4 +20,4 @@ COPY alembic.ini tenant_alembic.ini ./
 COPY alembic ./alembic
 COPY tenant_alembic ./tenant_alembic
 USER backend
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--no-server-header", "--timeout-keep-alive", "5"]
