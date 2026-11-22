@@ -10,7 +10,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract", "c06_result_store", "c06_conversations", "c06_sealing", "c06_authorization", "c06_lifecycle", "c06_security", "c06_recovery", "c06_handoff_schema", "document_repairs", "document_results", "joint_ask")
+GROUPS = ("authentication", "departments", "users", "role_policies", "usage", "core_access", "core_lifecycle", "database_isolation", "tenant_contract", "c06_result_store", "c06_conversations", "c06_sealing", "c06_authorization", "c06_lifecycle", "c06_security", "c06_recovery", "c06_handoff_schema", "c06_handoff_service", "document_repairs", "document_results", "joint_ask")
 ENVIRONMENT_POLICY = json.loads((Path(__file__).with_name("test-environment-policy.json")).read_text(encoding="utf-8"))
 
 
