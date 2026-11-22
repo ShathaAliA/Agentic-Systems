@@ -1,0 +1,9 @@
+-r ../requirements.txt
+pypdf
+pytesseract==0.3.13
+pillow
+pymupdf
+python-docx
+openpyxl
+python-pptx
+# OCR also needs the Tesseract program with the "ara" and "eng" language data installed.
