@@ -1,0 +1,6 @@
+# Secret scanning configuration. Default rules stay on; allowlist entries below are narrow, each explained,
+# and were added only after reviewing a real finding (never a blanket path exclusion).
+title = "Agentic-Systems secret scanning"
+
+[extend]
+useDefault = true

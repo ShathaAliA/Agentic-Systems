@@ -71,6 +71,25 @@ server {
 
 Then set `ALLOWED_HOSTS=portal.example.com`, `TRUSTED_PROXY_IPS=<proxy address>`, `HTTPS_REQUIRED=1`.
 
+## Supply chain and secret hygiene (PR-C)
+
+| Control | Behaviour | Where |
+| --- | --- | --- |
+| Secret scan | gitleaks 8.30.1 (version pinned, SHA-256 verified before use) scans the **full history** on every PR, on pushes to `Backend` and weekly; values are redacted in logs | `.github/workflows/security.yml`, `.gitleaks.toml` |
+| Dependency audit | `pip-audit` audits the exact installed test environment (pip upgraded first). Any unwaived advisory fails the job | `Backend/tools/run-pip-audit.py` |
+| Waivers | `Backend/security/audit-waivers.json`: each entry needs `id` (or an alias), `package`, `reason` and `expires`. An expired or malformed waiver fails the audit, so accepted risk cannot become permanent | same |
+| Dependabot | weekly update PRs for pip, GitHub Actions and Docker against `Backend`; they pass through the same required checks | `.github/dependabot.yml` |
+| Action pinning | every workflow action is pinned by commit SHA, permissions are read-only and `pull_request_target` is forbidden (a test enforces it) | `tests/test_supply_chain_tools.py` |
+
+Run locally, inside the environment to audit: `python Backend/tools/run-pip-audit.py` (exit 1 findings, exit 2 the
+audit could not run). Treat a leaked secret as compromised: **rotate it**; do not rewrite history unless the owner decides to.
+
+Repository settings that only the owner can switch on (not code): secret scanning with push protection, Dependabot
+alerts, and adding `secret-scan` and `dependency-audit` to the required checks of the `Backend` protection rule.
+
+First audit result: `opentelemetry-api` 1.45.1 (CVE-2026-126360, DoS in traceparent parsing, fixed in 1.45.2) was bumped.
+The application does not import it. Not included: container image scanning (Trivy) and static analysis (bandit).
+
 ## Not covered here
 
 Production login (Microsoft Entra), secrets manager, TLS certificates and WAF, encryption at rest, front-end
