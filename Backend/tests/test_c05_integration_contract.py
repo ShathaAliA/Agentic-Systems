@@ -136,7 +136,7 @@ def test_c05_core_migration_heads_are_not_partner_branch_heads():
     central = ScriptDirectory(str(BACKEND / "alembic"))
     tenant = ScriptDirectory(str(BACKEND / "tenant_alembic"))
 
-    assert central.get_heads() == ["rbac002_archive"]
+    assert central.get_heads() == ["handoff001_policy"]
     assert tenant.get_heads() == ["tenant_0008"]
     assert {"usage002_result_payload", "usage003_merge", "usage004_fence"} <= {
         revision.revision for revision in central.walk_revisions()}

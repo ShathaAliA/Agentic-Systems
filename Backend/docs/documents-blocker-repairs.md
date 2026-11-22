@@ -39,7 +39,7 @@ Existing HR/Finance/Central databases, containers, secrets and volumes are exclu
 Historical migrations are preserved, including usage002_result_payload,
 usage003_merge and tenant_0007. No stamp, purge, copy or historical rewrite.
 
-New Central revisions: usage004_fence -> rbac002_archive. The payload trigger
+New Central revisions: usage004_fence -> rbac002_archive -> handoff001_policy (Admin open-handoff cap). The payload trigger
 rejects new non-null business payloads and payload changes, while allowing
 metadata/accounting updates on legacy rows. Legacy Central content is retained;
 its accessibility/retention requires a separate approved migration and backup

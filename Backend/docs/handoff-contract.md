@@ -1,7 +1,7 @@
 # Human handoff — contract (H0)
 
 Status: design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
-`app/handoffs` (H2). Routes, notifications and audit access follow in H3–H5. Legal remains `failed`; no real data; no front end in this scope.
+`app/handoffs` (H2); routes, permission codes and the Admin cap in H3. Notifications and audit access follow in H4–H5. Legal remains `failed`; no real data; no front end in this scope.
 
 ## What it is
 
@@ -90,6 +90,18 @@ compromised application can set these values, so the application check against C
   handoff claims it first in the same transaction; replying as a non-assignee is `409 handoff_not_assignee`.
 - Inbox lists oldest first by creation (stable cursor); activity ordering belongs to the notification feed (H4).
 - The open cap is a callable (`open_cap`, default 5); H3 wires the Admin setting.
+
+### API and permissions (H3)
+
+`/api/handoffs`: `POST` create (201), `GET` mine, `GET /inbox?status=new|claimed|closed&department_id=`, `GET /{id}`,
+`GET|POST /{id}/messages`, `POST /{id}/read|claim|transfer|close|reopen`. Admin: `GET|PUT /api/admin/handoffs/policy`
+(`open_cap` 1–50, optimistic `expected_version`, append-only history in `handoff_policy_audit`, Central migration
+`handoff001_policy`; no row means the default 5, read afresh on every creation). Errors are the service codes.
+
+Permission codes `handoffs:request` (Employee) and `handoffs:handle` (Department Manager / Deputy) are in the role-policy
+catalog and `seed.py`; `handoffs:audit` is seeded for Admin and used from H5. Existing deployments need the permission
+rows added by seed or an admin step before roles can be mapped, as with every other code. Responses under
+`/api/handoffs` and `/api/admin` carry `Cache-Control: no-store`.
 
 ## Notification feed (H4)
 

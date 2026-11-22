@@ -19,6 +19,19 @@ OPERATIONS = [
     Operation("GET", "/api/conversations", "self"),
     Operation("GET", "/api/conversations/{conversation_id}", "self"),
     Operation("GET", "/api/conversations/{conversation_id}/messages", "self"),
+    Operation("POST", "/api/handoffs", "self", {}),
+    Operation("GET", "/api/handoffs", "self"),
+    Operation("GET", "/api/handoffs/inbox", "self"),
+    Operation("GET", "/api/handoffs/{handoff_id}", "self"),
+    Operation("GET", "/api/handoffs/{handoff_id}/messages", "self"),
+    Operation("POST", "/api/handoffs/{handoff_id}/messages", "self", {}),
+    Operation("POST", "/api/handoffs/{handoff_id}/read", "self", {}),
+    Operation("POST", "/api/handoffs/{handoff_id}/claim", "self"),
+    Operation("POST", "/api/handoffs/{handoff_id}/transfer", "self", {}),
+    Operation("POST", "/api/handoffs/{handoff_id}/close", "self"),
+    Operation("POST", "/api/handoffs/{handoff_id}/reopen", "self"),
+    Operation("GET", "/api/admin/handoffs/policy", "core_admin"),
+    Operation("PUT", "/api/admin/handoffs/policy", "core_admin", {"open_cap": 5, "expected_version": 0}),
     Operation("GET", "/health/db", "core_admin"),
     Operation("GET", "/auth/me", "self"),
     Operation("POST", "/auth/logout", "self"),
@@ -75,7 +88,8 @@ ADMIN = [op for op in OPERATIONS if op.policy in {"core_admin", "department_admi
 def path_for(op):
     return op.path.format(user_id="outsider", department_id="finance", grant_id="missing",
                           role_id="employee-user", assignment_id="missing", document_id=1, audience_id=1,
-                          conversation_id="11111111-1111-4111-8111-111111111111")
+                          conversation_id="11111111-1111-4111-8111-111111111111",
+                          handoff_id="33333333-3333-4333-8333-333333333333")
 
 
 def request(client, op, headers):
