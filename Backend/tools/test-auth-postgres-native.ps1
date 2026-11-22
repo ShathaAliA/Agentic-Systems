@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-isolation.ps1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$testDatabase = if ($TestFile -in @('tests/test_c06_authorization_postgres.py','tests/test_c06_lifecycle_postgres.py','tests/test_c06_security_postgres.py','tests/test_c06_recovery_postgres.py','tests/test_c06_handoff_schema_postgres.py','tests/test_c06_handoff_service_postgres.py','tests/test_joint_ask_postgres.py','tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
+$testDatabase = if ($TestFile -in @('tests/test_c06_authorization_postgres.py','tests/test_c06_lifecycle_postgres.py','tests/test_c06_security_postgres.py','tests/test_c06_recovery_postgres.py','tests/test_c06_handoff_schema_postgres.py','tests/test_c06_handoff_service_postgres.py','tests/test_c06_handoff_routes_postgres.py','tests/test_joint_ask_postgres.py','tests/test_c06_result_store_postgres.py','tests/test_c06_conversations_postgres.py','tests/test_c06_sealing_postgres.py')) { 'c06_result_test' } else { 'auth_test_db' }
 if (-not $Python) { $Python = Join-Path $repo '.local/rbac-venv/Scripts/python.exe' }
 $Python = Resolve-TestExecutable $Python
 foreach ($binary in @('initdb.exe', 'pg_ctl.exe', 'createdb.exe', 'pg_dump.exe', 'pg_dumpall.exe', 'pg_restore.exe')) {
