@@ -104,3 +104,24 @@ def test_admin_sets_the_open_cap(world):
     assert client.post(f"/api/handoffs/{again.json()['handoff_id']}/claim", headers=h["outsider"]).status_code == 200
     assert client.post(f"/api/handoffs/{again.json()['handoff_id']}/close", headers=h["outsider"]).status_code == 200
     assert client.put(url, json={"open_cap": 1, "expected_version": 1}, headers=h["admin"]).json()["version"] == 1  # unchanged
+
+
+def test_bell_counter_and_feed_over_http(world):
+    runtime, client, h, dept = world
+    bell = lambda who: client.get("/api/notifications/count", headers=h[who]).json()["unread_handoffs"]
+    mine = lambda who: [i for i in client.get("/api/notifications?limit=100", headers=h[who]).json()["items"]]
+    before = bell("employee")  # earlier tests in this module leave unread replies for the shared requester
+    assert client.get("/api/notifications").status_code == 401
+    created = client.post("/api/handoffs", json=body(runtime, dept), headers=h["employee"]).json()["handoff_id"]
+    assert bell("employee") == before and bell("outsider") == 1
+    client.post(f"/api/handoffs/{created}/messages", json={"body": "تفضل"}, headers=h["outsider"])
+    feed = client.get("/api/notifications?limit=100", headers=h["employee"])
+    assert feed.status_code == 200 and "no-store" in feed.headers["cache-control"]
+    item = next(i for i in feed.json()["items"] if i["handoff_id"] == created)
+    assert (item["kind"], item["unread_messages"]) == ("reply", 1) and feed.json()["unread_handoffs"] == before + 1
+    assert "تفضل" not in feed.text
+    assert client.get("/api/notifications?after=bad", headers=h["employee"]).json()["detail"] == "invalid_cursor"
+    assert client.get("/api/notifications?limit=0", headers=h["employee"]).status_code == 422
+    client.post(f"/api/handoffs/{created}/read", json={}, headers=h["employee"])
+    assert bell("employee") == before and not [i for i in mine("employee") if i["handoff_id"] == created]
+    client.post(f"/api/handoffs/{created}/close", headers=h["outsider"])

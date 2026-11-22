@@ -30,6 +30,8 @@ OPERATIONS = [
     Operation("POST", "/api/handoffs/{handoff_id}/transfer", "self", {}),
     Operation("POST", "/api/handoffs/{handoff_id}/close", "self"),
     Operation("POST", "/api/handoffs/{handoff_id}/reopen", "self"),
+    Operation("GET", "/api/notifications", "self"),
+    Operation("GET", "/api/notifications/count", "self"),
     Operation("GET", "/api/admin/handoffs/policy", "core_admin"),
     Operation("PUT", "/api/admin/handoffs/policy", "core_admin", {"open_cap": 5, "expected_version": 0}),
     Operation("GET", "/health/db", "core_admin"),
