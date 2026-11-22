@@ -1,7 +1,7 @@
 # Human handoff — contract (H0)
 
-Status: design, approved decisions; data model implemented in `c06_0005` (H1). Service, routes, notifications and
-audit access follow in H2–H5. Legal remains `failed`; no real data; no front end in this scope.
+Status: design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
+`app/handoffs` (H2). Routes, notifications and audit access follow in H3–H5. Legal remains `failed`; no real data; no front end in this scope.
 
 ## What it is
 
@@ -71,6 +71,25 @@ compromised application can set these values, so the application check against C
   over the last unanswered question, as already approved; further human requests wait.
 - Human messages never consume question credit. No message is edited or deleted by anyone.
 - Replying requires being the assignee; replying to an unclaimed handoff claims it first, in the same transaction.
+
+### How H2 applies them (`app/handoffs/service.py`, `access.py`)
+
+- One service instance is bound to one authenticated user (through its result store). Every call re-reads Central:
+  the user must be active; `handoffs:request` is checked on the department when creating or sending as the
+  requester; handler scope is the set of departments where the user holds a **department-scoped** role with
+  `handoffs:handle`, an active membership and an active department. A global role never makes anyone a handler.
+- Unknown, invisible and foreign handoffs all answer `404 handoff_not_found`. Staff views omit the conversation id
+  and turn; only the requester sees where the question came from.
+- Creating needs: an owned conversation that includes the department, a turn whose stored outcome is `no_answer`,
+  no other handoff for that turn and department, and fewer open handoffs than the cap. With the monthly credit
+  used up, only the **latest turn** of the conversation may still be handed over (`429 handoff_credit_exhausted`).
+  A retry with the same `request_key` replays; the same key with other content is `409`.
+- The assignee transfers (to another current handler, never to the requester or themself) and closes. If the assignee
+  has lost the handler role, any current handler may do both. A requester cannot claim, close or reopen.
+- Messages carry no idempotency key: a client retry after a lost response can post twice. Replying to an unclaimed
+  handoff claims it first in the same transaction; replying as a non-assignee is `409 handoff_not_assignee`.
+- Inbox lists oldest first by creation (stable cursor); activity ordering belongs to the notification feed (H4).
+- The open cap is a callable (`open_cap`, default 5); H3 wires the Admin setting.
 
 ## Notification feed (H4)
 
