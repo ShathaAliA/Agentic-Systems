@@ -88,3 +88,21 @@ data in summaries (the employee and the handler are responsible), Microsoft Entr
 
 The runtime login role needs `SELECT, INSERT` on the five new tables and nothing else. The store refuses to run
 below revision `c06_0005`. Take a backup before migrating, as with every C06 migration.
+
+## Verification of H1 (2026-11-22, Docker runner, PostgreSQL 17.10)
+
+| Suite | Result |
+| --- | --- |
+| New handoff schema (16 tests, 26 cases) | 26 passed |
+| result_store / conversations / sealing | 16 / 13 / 7 passed (1 native-only skip) |
+| authorization / lifecycle / security | 24 / 11 / 20 passed |
+| recovery + restore drill (now covering the five new tables) | 7 + 5 passed |
+| joint /ask (SQLite tenant) and joint /ask on real pgvector | 8 and 6 passed |
+| Unit suite | 589 passed |
+
+Behaviour worth knowing: BEFORE ROW triggers run before RLS checks, and the event guard reads events through RLS.
+An actor who cannot see a handoff is therefore refused by the guard (a check violation) rather than by the policy,
+with the same error as for a handoff that does not exist, so existence is not revealed.
+
+Not covered yet: PostgreSQL 18.x native, hosted CI, the service layer, routes, notifications and Admin audit
+access (H2–H5), and the permission codes in the role-policy catalog (H3).

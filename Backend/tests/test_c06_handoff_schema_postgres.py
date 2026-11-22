@@ -166,7 +166,9 @@ def test_insert_policies_refuse_every_unauthorized_write(engines, case):
         "audit_cannot_write": ("auditor", msg, dict(h=handoff, d=DEPT, a="auditor", r="staff"), dict(audit=True)),
     }
     user, statement, params, context = attempts[case]
-    state = RLS if statement is ev else DENIED
+    # Who can see the handoff decides which layer answers first: the BEFORE guard reads events through RLS, so an
+    # actor that cannot see the handoff is refused by the guard (same error as for a handoff that does not exist).
+    state = RLS if case in {"requester_claims", "actor_spoof"} else DENIED
     refused(runtime, user, statement, params, state=state, **context)
 
 
