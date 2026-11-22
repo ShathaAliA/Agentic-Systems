@@ -1,6 +1,6 @@
 # Human handoff — contract (H0)
 
-Status: design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
+Status: complete through H5 and H7 (H6 deferred); design, approved decisions; data model implemented in `c06_0005` (H1); service implemented in
 `app/handoffs` (H2); routes, permission codes and the Admin cap in H3; notification feed in H4; Admin audit read in H5. Legal remains `failed`; no real data; no front end in this scope.
 
 ## What it is
@@ -138,20 +138,25 @@ data in summaries (the employee and the handler are responsible), Microsoft Entr
 The runtime login role needs `SELECT, INSERT` on the five new tables and nothing else. The store refuses to run
 below revision `c06_0005`. Take a backup before migrating, as with every C06 migration.
 
-## Verification of H1 (2026-11-22, Docker runner, PostgreSQL 17.10)
+## Verification (2026-11-22, Docker runner, PostgreSQL 17.10)
 
 | Suite | Result |
 | --- | --- |
-| New handoff schema (16 tests, 26 cases) | 26 passed |
+| Handoff schema (H1) | 26 passed |
+| Handoff service, notifications and Admin audit (H2, H4, H5) | 16 passed |
+| Handoff API: employee, handler, bell, Admin audit, Admin cap (H3–H5) | 5 passed |
 | result_store / conversations / sealing | 16 / 13 / 7 passed (1 native-only skip) |
 | authorization / lifecycle / security | 24 / 11 / 20 passed |
-| recovery + restore drill (now covering the five new tables) | 7 + 5 passed |
-| joint /ask (SQLite tenant) and joint /ask on real pgvector | 8 and 6 passed |
-| Unit suite | 589 passed |
+| recovery + restore drill (covers the five handoff tables) | 7 + 5 passed |
+| authentication / role_policies / core_access / usage | 2 / 5 / 6 / 10 passed |
+| joint /ask (SQLite tenant) | 8 passed |
+| Unit suite (no PostgreSQL) | 570 passed, 44 skipped |
+
+Hosted CI ran the handoff groups natively on Windows PostgreSQL and the unit and container jobs on Linux for H2–H4.
 
 Behaviour worth knowing: BEFORE ROW triggers run before RLS checks, and the event guard reads events through RLS.
 An actor who cannot see a handoff is therefore refused by the guard (a check violation) rather than by the policy,
 with the same error as for a handoff that does not exist, so existence is not revealed.
 
-Not covered yet: PostgreSQL 18.x native, hosted CI, the service layer, routes, notifications and Admin audit
-access (H2–H5), and the permission codes in the role-policy catalog (H3).
+Not covered: PostgreSQL 18.x, load or soak testing, SSE, email/Teams, H6 (answer to knowledge), a front end, and
+retention/encryption decisions. Deployment steps and operations are in [handoff-runbook.md](handoff-runbook.md).
