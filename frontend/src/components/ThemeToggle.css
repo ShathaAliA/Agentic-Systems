@@ -1,0 +1,5 @@
+.theme-toggle { display: grid; place-items: center; flex: none; width: 42px; height: 42px; background: var(--face-raised); color: var(--pearl-dim); border: 1px solid var(--edge); border-radius: 50%; box-shadow: var(--shadow-key); cursor: pointer; }
+.theme-toggle:hover { color: var(--pearl); filter: brightness(1.06); }
+.theme-toggle:active { box-shadow: var(--shadow-pressed); }
+.theme-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.theme-toggle--corner { position: fixed; top: 16px; inset-inline-start: 16px; z-index: 40; }
