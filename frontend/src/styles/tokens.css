@@ -1,133 +1,111 @@
-/* Theme: Onyx + Champagne. Source of truth for every colour, radius and motion value. */
+/* Élan — VIO Moodboard: vivid berry, liquid mint and inky plum. */
 :root {
   --font-ui: 'jooza', 'Readex Pro', 'Segoe UI', Tahoma, sans-serif;
   --font-display: 'Marhey', 'jooza', 'Readex Pro', serif;
 
-  /* ground and ink (Deep Onyx Black / Dark Charcoal Velvet) */
+  --ink: #171317;
+  --ink-raised: #241b25;
+  --charcoal: #302333;
+  --bronze: #8a176e;
+  --bronze-glow: #c13b9a;
+  --bronze-deep: #35102c;
+  --champagne: #c6f0e4;
+  --accent-tint: #321d30;
+  --pearl: #f7edf5;
+  --pearl-dim: #d2bdce;
+  --pearl-mute: #a48da0;
+  --on-accent: #f8eafa;
+  --line: rgb(198 240 228 / 0.2);
+  --line-soft: rgb(198 240 228 / 0.11);
+  --tint: rgb(198 240 228 / 0.07);
+  --focus: #a7e8d7;
 
-  /* metals (Bronze Aura / Gilded Champagne) */
-
-  /* text (Champagne Sparkle) */
-
-  /* lines and states */
-
-  /* shapes and motion */
   --radius-card: 22px;
   --radius-bubble: 16px;
   --radius-chip: 8px;
   --radius-pill: 999px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* hero ground: bronze haze from above, champagne light from below; the curve itself is drawn in the page */
   --hero-bg:
-    radial-gradient(85% 55% at 50% -12%, rgb(166 124 82 / 0.4) 0%, transparent 72%),
-    radial-gradient(70% 50% at 88% 52%, rgb(217 197 160 / 0.16) 0%, transparent 70%),
-    radial-gradient(95% 45% at 38% 112%, rgb(217 197 160 / 0.4) 0%, transparent 72%),
+    radial-gradient(70% 55% at 82% 0%, rgb(138 23 110 / 0.42) 0%, transparent 72%),
+    radial-gradient(55% 48% at 8% 70%, rgb(167 232 215 / 0.16) 0%, transparent 70%),
+    radial-gradient(90% 50% at 48% 112%, rgb(100 22 80 / 0.62) 0%, transparent 72%),
     var(--ink);
 
-  /* skeuomorphic surfaces: light falls from above, so tops catch light and bottoms fall into shadow */
-  --metal: linear-gradient(180deg, #b5b4a3 0%, #9b9a8b 50%, #85847a 100%);
-  --plate-brick: linear-gradient(180deg, #94503f 0%, #693329 100%);
-  --shadow-metal: inset 0 1px 0 rgb(255 255 240 / 0.55), inset 0 -2px 0 rgb(50 50 40 / 0.5), 0 1px 0 rgb(0 0 0 / 0.6), 0 8px 18px -6px rgb(0 0 0 / 0.8);
-  --ink-on-metal: #16160f;
+  --metal: linear-gradient(125deg, #c6f0e4 0%, #a7e8d7 42%, #8a176e 100%);
+  --plate-brick: linear-gradient(135deg, #8a176e 0%, #641650 100%);
+  --shadow-metal: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 -2px 0 rgb(50 12 42 / 0.3), 0 8px 22px -8px rgb(138 23 110 / 0.65);
+  --ink-on-metal: #241323;
+  --metal-edge: rgb(198 240 228 / 0.35);
+  --metal-text-shadow: 0 1px 0 rgb(255 255 255 / 0.22);
+  --ring-a: #c6f0e4; --ring-b: #a7e8d7; --ring-c: #8a176e;
 
-  /* shared helpers that differ per theme */
-  --metal-edge: rgb(50 50 40 / 0.7);
-  --metal-text-shadow: 0 1px 0 rgb(255 255 240 / 0.35);
-  --ring-a: #6f6e63; --ring-b: #9b9a8b; --ring-c: #b5b4a3;
+  --face-raised: linear-gradient(145deg, #302333 0%, #211922 100%);
+  --face-panel: linear-gradient(145deg, #2a202b 0%, #1d171f 100%);
+  --face-well: #110e12;
+  --edge: rgb(198 240 228 / 0.18);
+  --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.45), 0 14px 28px -14px rgb(0 0 0 / 0.8);
+  --shadow-key: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 -2px 0 rgb(0 0 0 / 0.4), 0 6px 14px -6px rgb(0 0 0 / 0.7);
+  --shadow-pressed: inset 0 2px 6px rgb(0 0 0 / 0.6);
+  --shadow-well: inset 0 2px 7px rgb(0 0 0 / 0.7), inset 0 -1px 0 rgb(255 255 255 / 0.04);
+  --shade: 0 0 0;
+  --title-shadow: 0 2px 28px rgb(138 23 110 / 0.35);
+  --accent-edge: rgb(198 240 228 / 0.3);
   color-scheme: dark;
 }
 
-:root {
-  /* the dark colours; in the light theme the plates keep them, so dark charcoal plates sit on the beige page */
-  --ink: #0b0b0b;
-  --ink-raised: #1a1918;
-  --charcoal: #2d2d2d;
-  --bronze: #a67c52;
-  --bronze-glow: #6b4c2c;
-  --bronze-deep: #2a2016;
-  --champagne: #d9c5a0;
-  --accent-tint: #2a2218;
-  --pearl: #e5dfd0;
-  --pearl-dim: #b9b2a3;
-  --pearl-mute: #8f897d;
-  --on-accent: #e9d6b0;
-  --line: rgb(229 223 208 / 0.2);
-  --line-soft: rgb(229 223 208 / 0.12);
-  --tint: rgb(229 223 208 / 0.07);
-  --focus: #d9c5a0;
-  --face-raised: linear-gradient(180deg, #2b2a28 0%, #1d1c1b 100%);
-  --face-panel: linear-gradient(180deg, #242322 0%, #161514 100%);
-  --face-well: #090908;
-  --edge: rgb(0 0 0 / 0.62);
-  --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.09), inset 0 -1px 0 rgb(0 0 0 / 0.55), 0 1px 0 rgb(0 0 0 / 0.6), 0 14px 26px -12px rgb(0 0 0 / 0.8);
-  --shadow-key: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.45), 0 1px 0 rgb(0 0 0 / 0.7), 0 6px 14px -6px rgb(0 0 0 / 0.8);
-  --shadow-pressed: inset 0 2px 6px rgb(0 0 0 / 0.65), inset 0 1px 0 rgb(0 0 0 / 0.5);
-  --shadow-well: inset 0 2px 7px rgb(0 0 0 / 0.75), inset 0 -1px 0 rgb(255 255 255 / 0.05), 0 1px 0 rgb(255 255 255 / 0.05);
-  --shade: 0 0 0;                      /* colour of drop shadows, as r g b */
-  --title-shadow: 0 -1px 0 rgb(0 0 0 / 0.85), 0 1px 0 rgb(255 255 255 / 0.1);
-  --accent-edge: rgb(233 214 176 / 0.35);
-}
-
-/* Light theme: soft cream neumorphism with a deep-teal accent. Surfaces share the page's cream and are shaped by paired light and dark shadows. */
 :root[data-theme='light'] {
   color-scheme: light;
-  --ink: #ebe2d1;
-  --ink-raised: #f0e8d9;
-  --charcoal: #ddd3c0;
-  --bronze: #9c8660;
-  --bronze-glow: #c9b78f;
-  --bronze-deep: #ddd3c0;
-  --champagne: #7a4d1e;
-  --accent-tint: #dcd3c0;
-
-  --pearl: #4a3322;
-  --pearl-dim: #6b5240;
-  --pearl-mute: #9a8570;
-  --on-accent: #6a421a;
-
-  --line: rgb(80 65 40 / 0.24);
-  --line-soft: rgb(80 65 40 / 0.14);
-  --tint: rgb(80 65 40 / 0.07);
-  --focus: #7a4d1e;
-
+  --ink: #f5eff5;
+  --ink-raised: #fffaff;
+  --charcoal: #e9dce8;
+  --bronze: #8a176e;
+  --bronze-glow: #c13b9a;
+  --bronze-deep: #641650;
+  --champagne: #641650;
+  --accent-tint: #f0e1ef;
+  --pearl: #302333;
+  --pearl-dim: #604b5d;
+  --pearl-mute: #8e788a;
+  --on-accent: #641650;
+  --line: rgb(100 22 80 / 0.2);
+  --line-soft: rgb(100 22 80 / 0.12);
+  --tint: rgb(100 22 80 / 0.06);
+  --focus: #8a176e;
   --hero-bg:
-    radial-gradient(85% 55% at 50% -12%, rgb(255 252 244 / 0.85) 0%, transparent 72%),
-    radial-gradient(70% 50% at 88% 52%, rgb(122 77 30 / 0.1) 0%, transparent 70%),
-    radial-gradient(95% 45% at 38% 112%, rgb(150 130 100 / 0.26) 0%, transparent 72%),
+    radial-gradient(75% 55% at 82% 0%, rgb(198 240 228 / 0.72) 0%, transparent 72%),
+    radial-gradient(60% 50% at 8% 75%, rgb(138 23 110 / 0.1) 0%, transparent 70%),
+    radial-gradient(90% 48% at 48% 112%, rgb(167 232 215 / 0.45) 0%, transparent 72%),
     var(--ink);
-
-  --face-raised: linear-gradient(145deg, #f2eadc 0%, #e8dfce 100%);
-  --face-panel: linear-gradient(145deg, #f0e8d9 0%, #e7ddcb 100%);
-  --face-well: #e5dbc9;
-  --edge: rgb(120 100 70 / 0.16);
-  --shadow-raised: -7px -7px 16px rgb(255 252 244 / 0.95), 7px 8px 18px rgb(150 130 100 / 0.38);
-  --shadow-key: -3px -3px 8px rgb(255 252 244 / 0.95), 3px 4px 9px rgb(150 130 100 / 0.38);
-  --shadow-pressed: inset 3px 3px 7px rgb(150 130 100 / 0.45), inset -3px -3px 7px rgb(255 252 244 / 0.85);
-  --shadow-well: inset 2px 3px 7px rgb(150 130 100 / 0.38), inset -2px -2px 6px rgb(255 252 244 / 0.9);
-  --metal: linear-gradient(180deg, #92602d 0%, #7a4d1e 55%, #633d17 100%);
-  --shadow-metal: inset 0 1px 0 rgb(255 255 255 / 0.22), inset 0 -2px 0 rgb(0 0 0 / 0.18), 0 8px 16px -6px rgb(99 61 23 / 0.6);
-  --ink-on-metal: #f6f1e6;
-  --metal-edge: rgb(60 36 12 / 0.55);
-  --metal-text-shadow: 0 -1px 0 rgb(0 0 0 / 0.3);
-
-  --shade: 150 130 100;
-  --title-shadow: 0 1px 0 rgb(255 252 244 / 0.9);
-  --accent-edge: rgb(122 77 30 / 0.4);
-  --ring-a: #c09a6a; --ring-b: #92602d; --ring-c: #633d17;
+  --face-raised: linear-gradient(145deg, #fffaff 0%, #f0e7f0 100%);
+  --face-panel: linear-gradient(145deg, #fffaff 0%, #f3eaf3 100%);
+  --face-well: #e9deea;
+  --edge: rgb(100 22 80 / 0.16);
+  --shadow-raised: -7px -7px 16px rgb(255 255 255 / 0.95), 7px 8px 18px rgb(100 22 80 / 0.12);
+  --shadow-key: -3px -3px 8px rgb(255 255 255 / 0.95), 3px 4px 9px rgb(100 22 80 / 0.14);
+  --shadow-pressed: inset 3px 3px 7px rgb(100 22 80 / 0.18), inset -3px -3px 7px rgb(255 255 255 / 0.85);
+  --shadow-well: inset 2px 3px 7px rgb(100 22 80 / 0.14), inset -2px -2px 6px rgb(255 255 255 / 0.9);
+  --metal: linear-gradient(125deg, #641650 0%, #8a176e 58%, #c13b9a 100%);
+  --shadow-metal: inset 0 1px 0 rgb(255 255 255 / 0.28), inset 0 -2px 0 rgb(50 12 42 / 0.18), 0 8px 16px -6px rgb(100 22 80 / 0.28);
+  --ink-on-metal: #fff7fc;
+  --metal-edge: rgb(100 22 80 / 0.3);
+  --metal-text-shadow: 0 -1px 0 rgb(0 0 0 / 0.2);
+  --shade: 100 22 80;
+  --title-shadow: 0 1px 0 rgb(255 255 255 / 0.9);
+  --accent-edge: rgb(138 23 110 / 0.35);
+  --ring-a: #641650; --ring-b: #8a176e; --ring-c: #c13b9a;
 }
 
-/* Light theme: the cards of "what the platform solves" and "what it offers each department" are the same dark brown as the headings, with beige lettering. */
 :root[data-theme='light'] :is(.rows, .bento__big, .bento__small) {
-  --face-panel: linear-gradient(145deg, #54392a 0%, #4a3322 55%, #402b1c 100%);
-  --face-well: #36231a;
-  --pearl: #f3e8d3;
-  --pearl-dim: #e2d0ae;
-  --pearl-mute: #c4ac85;
-  --on-accent: #f0dcb4;
-  --edge: rgb(40 22 6 / 0.35);
-  --line-soft: rgb(243 232 211 / 0.16);
-  --shadow-raised: inset 0 1px 0 rgb(255 240 210 / 0.22), inset 0 -1px 0 rgb(40 22 6 / 0.35), 7px 9px 20px -8px rgb(70 38 10 / 0.55), -6px -6px 14px rgb(255 252 244 / 0.8);
-  --shadow-well: inset 2px 3px 7px rgb(30 15 3 / 0.55), inset -1px -1px 0 rgb(255 240 210 / 0.1);
+  --face-panel: linear-gradient(145deg, #641650 0%, #47203f 100%);
+  --face-well: #35102c;
+  --pearl: #f8eafa;
+  --pearl-dim: #e2cde0;
+  --pearl-mute: #c4a9c1;
+  --on-accent: #f0d8ed;
+  --edge: rgb(40 12 35 / 0.3);
+  --line-soft: rgb(243 232 250 / 0.16);
+  --shadow-raised: inset 0 1px 0 rgb(255 240 250 / 0.2), inset 0 -1px 0 rgb(40 12 35 / 0.3), 7px 9px 20px -8px rgb(70 20 60 / 0.3), -6px -6px 14px rgb(255 255 255 / 0.65);
+  --shadow-well: inset 2px 3px 7px rgb(30 10 25 / 0.45), inset -1px -1px 0 rgb(255 240 250 / 0.1);
   color: var(--pearl);
 }
